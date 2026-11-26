@@ -1,4 +1,4 @@
-// Smoke test, part 7 of 7: curling, bowling, bumper pool, the marble run, playing with the row shut, Bejeweled, air hockey's corners, Asteroids, the Difficulty and
+// Smoke test, part 7 of 7: bowling, bumper pool, the marble run, playing with the row shut, Bejeweled, air hockey's corners, Asteroids, the Difficulty and
 // the board lock, Invaders, Board War and Simon's songs.
 //
 //   node tests/part7.mjs            this part alone (LIBS_DIR, BASE_URL, SETTLE_MS and CHROMIUM_PATH as for npm test)
@@ -15,60 +15,7 @@ const T = await begin(7, () => current);
 const { page, failures } = T;
 
 try {
-  // CURLING ON THE POOL TABLE (Nov 25: "lets do the same thing for curling that we did for bowling.   use the pool engine."): the first stone at the
-  // hack; an end's score on stones made up; four ends of balls made up, scored, the scorer first next end, a win; in shots a lone stone's weight to
-  // the button, the tip's side curling it either way, a takeout putting a stone out, a stone short of the hog line out; the computer's stone; the
-  // real Enter; a board no one plays
-  current = 'curling';
-  {
-    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'curling')));
-    await drawn(page, 1500); await page.evaluate(() => window.__settle && window.__settle());
-    const cu = await page.evaluate(() => {
-      const A = window.getFieldApp(), D = A._debug, out = {}, T = D.CU_TEE, st = (n, x, z) => ({ n, x, z, r: D.CU_R, y: 0, vx: 0, vz: 0, sunk: false });
-      const B = D.rackCu(3); out.rack = B.length === 1 && B[0].cue && B[0].n === 26 && B[0].x === D.CU_HACK[0] && B[0].z === D.CU_HACK[1];
-      out.score = [D.cuEndScore([st(26, T + 0.3, 0), st(27, T + 1, 0), st(30, T + 0.8, 0)]), D.cuEndScore([st(30, T, 0.2), st(31, T + 0.5, 0), st(26, T + 1.2, 0), st(32, T + 2, 0)]), D.cuEndScore([st(26, T - 4, 0)])].map(e => e.side + ':' + e.pts).join(' ');
-      const L = D.LIVE, k = L && L.c + '_' + L.r; if (!k) return { ...out, none: true };
-      out.name = A.name; out.start = (() => { const g = D.GAMES.get(k) || D.gameAt(L.c, L.r); return [g.balls.length, g.nine.turn, /^Curling/.test(D.cuTitle(g))].join(); })();
-      const fresh = () => { D.GAMES.delete(k); return D.gameAt(L.c, L.r); };
-      // a stone made up: the delivered one comes to rest at (x, z), having met another if `met`
-      const throwTo = (h, x, z) => { const s = { first: null, contacts: [], cushions: [], sunk: [], final: h.balls.map(b => b.cue ? { ...b, x, z } : { ...b }) }; h.anim = { s }; D.cuFinish(h, s); };
-      let h = fresh(); const ends = [];
-      for (let e = 0; e < D.CU_ENDS; e++){ for (let j = 0; j < 2 * D.CU_STONES; j++){ const t = h.nine.turn; if (h.nine.over) break;
-          if (e === 0 && t === 0) throwTo(h, T + 0.25 * h.nine.thrown[0], 0.6 * (h.nine.thrown[0] - 1.5)); else throwTo(h, 9.6, 0); }   // (the computer's, and the later ends', past the back line: out)
-        ends.push([h.nine.pts.join('-'), h.nine.first, h.nine.end, h.balls.length].join(':')); }
-      out.ends = ends.join(' '); out.over = [h.nine.over, h.nine.stars, /you won/.test(D.cuTitle(h))].join();
-      h = fresh(); const P = D.matchPlan(D.MATCH.curl, h, 3); out.plan = isFinite(P.score) && isFinite(P.a) && P.p >= 1;
-      fresh();
-      return out;
-    });
-    // shots through the match's own strike (the tip's side as the curl), from the page's own debug
-    const sh = await page.evaluate(() => {
-      const D = window.getFieldApp()._debug, T = D.CU_TEE, out = {}, p = D.cuPowFor(T - D.CU_HACK[0]);
-      const strike = (B, a, pw, tip) => { const st = D.strike(a, tip, pw); return D.simCu(B, st.dir, st.speed, st.w, st.vy); };
-      const stone = () => [{ ...D.rackCu(0)[0] }];
-      const s0 = strike(stone(), 0, p, 0), f0 = s0.final[0]; out.draw = [Math.abs(f0.x - T) < 0.6, Math.abs(f0.z) < 0.2].join();
-      const sl = strike(stone(), 0, p, 0.4), sr = strike(stone(), 0, p, -0.4); out.curl = [Math.abs(sl.final[0].z) > 0.3, Math.abs(sr.final[0].z) > 0.3, Math.sign(sl.final[0].z) === -Math.sign(sr.final[0].z)].join();
-      const tgt = { ...D.rackCu(0)[0], n: 30, cue: false, x: T, z: 0 }, B2 = [stone()[0], tgt], s2 = strike(B2, 0, Math.min(60, p * 1.9), 0); out.takeout = D.cuOut(B2, s2).includes(30);
-      const s3 = strike(stone(), 0, p * 0.5, 0); out.hog = D.cuOut(stone(), s3).includes(26);
-      return out;
-    });
-    const g1 = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = L && D.GAMES.get(L.c + '_' + L.r);
-      return g ? { shots: g.shots, anim: !!g.anim, moves: g.nine.moves.length, over: g.nine.over, turn: g.nine.turn } : null; });
-    await page.keyboard.press('Enter'); await drawn(page, 300);
-    const went = await g1();
-    for (let k = 0; k < 120 && (await g1()).anim; k++) await frame(page, 300);
-    const after = await g1();
-    const rec = await page.evaluate(() => { const D = window.getFieldApp()._debug, R = D.nineRecSoon(40, true);
-      const at = k => JSON.stringify(Array.from(R.s.frames[Math.floor(k * (R.s.frames.length - 1))]).map(v => isNaN(v) ? null : +v.toFixed(2)));
-      return { shots: R.shots, over: R.over, moves: at(0) !== at(1), again: D.nineRecSoon(40) === R, kind: R.S.kind }; });
-    const ok = cu && !cu.none && cu.rack && cu.name === 'Curling' && cu.start === '1,0,true' && cu.score === '0:1 1:2 -1:0'
-      && cu.ends === '4-0:0:2:1 4-0:0:3:1 4-0:0:4:1 4-0:0:5:0' && cu.over === '1,3,true' && cu.plan
-      && sh.draw === 'true,true' && sh.curl === 'true,true,true' && sh.takeout && sh.hog
-      && went && went.shots === 1 && after && !after.anim && after.moves === 1 && after.turn === 1
-      && rec.kind === 'curl' && rec.shots >= 8 && rec.moves && rec.again;
-    if (!ok) failures.push('[curling] ' + JSON.stringify({ cu, sh, went, after, rec }));
-    console.log(`${ok ? 'ok  ' : 'FAIL'} curling on the pool table (the stone at the hack; an end scored by the stones nearest the button; four ends to a win; a lone stone's weight to the button, the tip's side curling it either way, a takeout and the hog line; the computer's stone; the real Enter threw; a board no one plays threw ${rec.shots} stones${rec.over ? ', to a win' : ''})`);
-  }
+  // (CURLING ON THE POOL TABLE was checked here from Nov 25 until Nov 26: "Remove curling game.")
 
   // BOWLING ON THE POOL TABLE (Nov 25: "Let's rewrite it to use the pool engine and camera.   The pins should be pool balls but otherwise follow bowling
   // rules.", then "remove the cushions, of the ball goes off the board it falls in a ditch", then "Make the balls slighty bigger.", then "Leave the balls

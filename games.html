@@ -55146,7 +55146,6 @@ const TRICK_APP = (() => {
   const COLS = { 1: '#e3c33b', 2: '#2f5fd0', 3: '#d23a2f', 4: '#6b3fa0', 5: '#e0782a', 6: '#2e8b57', 7: '#7a2f2a', 8: '#16161a' };
   for (let k = 9; k <= 15; k++) COLS[k] = COLS[k - 8];
   for (let k = 16; k <= 25; k++) COLS[k] = k <= 20 ? '#c8312b' : '#ece4cf';   // (bumper pool's reds and ivories, Nov 25)
-  for (let k = 26; k <= 33; k++) COLS[k] = k <= 29 ? '#d8332c' : '#f2c230';   // (curling's stones: the cap's colour, Nov 25)
   const ballOf = (n, x, z) => ({ n, x, z, y: 0, vx: 0, vz: 0, vy: 0, wx: 0, wy: 0, wz: 0, r: R, m: 1, col: n === 0 ? '#f2f0ea' : COLS[n], stripe: n >= 9, cue: n === 0, sunk: false });
 
   // ══ played from inside (pool.html, POL runs 1–2) ══
@@ -56275,8 +56274,6 @@ const TRICK_APP = (() => {
                 planGen: (g, lv) => carPlanGen(g, lv), title: g => carTitle(g), sim: (...a) => simC(...a), brk: false, recShots: () => CAR_REC_SHOTS, bare: true, app: null },
     bowl:     { key: 'bowl', pre: 'w', best: 'bw:', games: new Map(), rack: idx => rackB(idx), cue: B => ({ ang: bwlAim(B), power: 24, elev: 0 }), fresh: () => bwlNew(), see: () => BWL_SEE, finish: (g, s) => bwlFinish(g, s),
                 planGen: (g, lv) => bwlPlanGen(g, lv), title: g => bwlTitle(g), sim: (...a) => simB(...a), brk: false, recShots: () => BWL_REC_SHOTS, bare: true, kitchen: true, ditch: true, app: null },
-    curl:     { key: 'curl', pre: 'u', best: 'cr:', games: new Map(), rack: idx => rackCu(idx), cue: B => ({ ang: 0, power: Math.round(cuPowFor(CU_TEE - CU_HACK[0])), elev: 0 }), fresh: () => cuNew(), see: () => CU_SEE, finish: (g, s) => cuFinish(g, s),
-                planGen: (g, lv) => cuPlanGen(g, lv), title: g => cuTitle(g), sim: (...a) => simCu(...a), brk: false, recShots: () => CU_REC_SHOTS, bare: true, ditch: true, curl: true, app: null },
     bumper:   { key: 'bumper', pre: 'p', best: 'bp:', games: new Map(), rack: () => rackBp(), cue: B => ({ ang: bpAim(B, 0), power: 16, elev: 0 }), fresh: () => bpNew(), see: () => BP_SEE, finish: (g, s) => bpFinish(g, s),
                 planGen: (g, lv) => bpPlanGen(g, lv), title: g => bpTitle(g), sim: (...a) => simBp(...a), brk: false, recShots: () => BP_REC_SHOTS, bare: true, bumper: true, pick: (g, b) => bpCanPick(g.balls, 0, b), app: null },
   };
@@ -57060,123 +57057,8 @@ const TRICK_APP = (() => {
     if (!p || p.cue) return false;
     g.balls.forEach(b => { b.cue = b === p; }); g.ang = bpAim(g.balls, 0); g.dirty = true; touch(); return true;
   }
-  /* CURLING, ON THE POOL TABLE (Nov 25: "lets do the same thing for curling that we did for bowling.   use the pool engine."). An entry of `MATCH`
-     ('curl'; its app is the field's `curling`, until now a sheet of its own, `CURLING_APP` of Oct 28, taken out with its pull bar): the pool table,
-     its engine, its cue and its view from behind the stone, the stones pool balls a little bigger (`CU_R`), granite with a red or a yellow cap.
-     - THE SHEET: the table without cushions or pockets (the edges a dark gutter, as bowling's), the house at the foot (`CU_TEE`, rings to
-       `CU_HOUSE`), the far hog line (`CU_HOG`), the back line (`CU_BACK`), the hack at the head (`CU_HACK`), where each stone is delivered.
-     - THE THROW is pool's: aim, power, and the tip. The tip's side is the CURL: a stone struck with side spin turns that way and keeps turning
-       as it slides (the engine's `TRAP`: a push square to its way, `CU_CURL` × the board's ice, more as it slows), until it meets a stone.
-     - OUT (`cuOut`): a stone whose middle leaves the sheet, a stone wholly past the back line, and a delivered stone that comes to rest short of
-       the far hog line without having met another.
-     - THE RULES: four stones a side an end (`CU_STONES`), delivered in turn; when all are thrown, the side with the stone nearest the button
-       scores one for each of its stones in the house nearer than the other side's nearest (`cuEndScore`). The side that scored throws first next
-       end; a blank end keeps the order. Four ends (`CU_ENDS`), an extra end on a draw. Stars for your win by the margin (3 at 3 or more, 2 at 2).
-     - EVERY BOARD ITS OWN ICE (`cuIce`, by the board's number: how far it curls, more farther out).
-     - THE COMPUTER (`cuPlanGen`) tries draws to the button and beside it, a guard, and takeouts of your stones in the house, each at a few aims
-       either side, curls and weights round the weight that would bring a lone stone there (`cuPowFor`, found by throwing one), judged by the end's
-       score if it ended then (`cuValue`); then its hand's error.
-     - THE SWEEPING of the old sheet is gone: the pool table has no broom. */
-  const CU_R = 1.15 * R, CU_HACK = [-8.2, 0], CU_TEE = 6.2, CU_HOUSE = 2.4, CU_HOG = 1.4, CU_BACK = CU_TEE + CU_HOUSE, CU_STONES = 4, CU_ENDS = 4;
-  const CU_CURL = 0.9, CU_SEE = [2, 2, 1, 1, 0], CU_ERR = [3, 2, 1.2, 0.7, 0.4], CU_REC_SHOTS = 40, CU_RINGS = [[2.4, 0x2f6fc0], [1.6, 0xf4f4f2], [0.8, 0xd23a2f], [0.22, 0xf4f4f2]];
-  const cuIce = idx => { const lv = levelAt(idx), r = rng(idx * 7919 + 53)(); return 0.75 + 0.1 * lv + 0.3 * r; };
-  const cuSide = n => n <= 29 ? 0 : 1;
-  const cuStone = (t, k, idx) => ({ ...ballOf(26 + 4 * t + k, ...CU_HACK), r: CU_R, stripe: false, cue: true, curlK: cuIce(idx || 0) });
-  function rackCu(idx){ return [cuStone(0, 0, idx)]; }
-  const CU_FR = 1 / 60 / 4;   // (the engine's sub-step: FRAME / SUB)
-  function simCu(B, ang, power, w, vy){
-    const C = CUSHIONS.splice(0), P = POCKETS.splice(0); let s;
-    const B1 = B.map(b => b.cue ? { ...b, y: 0, turn: w && Math.abs(w[1]) > 0.05 ? Math.sign(w[1]) : 0, dir: null } : { ...b, y: 0, turn: 0 });
-    // (the curl: a push square to the stone's way, the way it turns, more as it slows; gone once it meets a stone (its way turned at once); and out
-    //  off the sheet: its middle past an edge, the stone gone)
-    TRAP = b => {
-      if (b.sunk) return;
-      if (Math.abs(b.x) > LX / 2 || Math.abs(b.z) > LZ / 2){ b.sunk = true; b.off = true; b.vx = b.vz = b.vy = b.wx = b.wy = b.wz = 0; return; }
-      const sp = Math.hypot(b.vx, b.vz); if (!(sp > 1e-6)) return;
-      const d = [b.vx / sp, b.vz / sp]; if (b.dir && d[0] * b.dir[0] + d[1] * b.dir[1] < 0.995) b.turn = 0; b.dir = d;
-      if (b.turn){ const a = CU_CURL * (b.curlK || 1) * b.turn * CU_FR * 2 / (1 + sp / 4); b.vx += -d[1] * a; b.vz += d[0] * a; b.dir = [b.vx / Math.hypot(b.vx, b.vz), b.vz / Math.hypot(b.vx, b.vz)]; }
-    };
-    try { s = simulate(B1, ang, power, w, vy); } finally { TRAP = null; CUSHIONS.push(...C); POCKETS.push(...P); }
-    if (!s) return s;
-    s.final = s.final.map((b, i) => ({ ...b, m: B[i].m, curlK: B[i].curlK, vx: 0, vz: 0, vy: 0, wx: 0, wy: 0, wz: 0, turn: 0, dir: null }));
-    return s;
-  }
-  // which stones a shot leaves out: off the sheet, wholly past the back line, the delivered one short of the far hog line having met none
-  function cuOut(B, s){
-    const cue = B.find(b => b.cue), met = cue && s.contacts.some(c => c.a === cue.n || c.b === cue.n);
-    return s.final.filter(b => b.sunk || b.x - b.r > CU_BACK || (b.cue && !met && b.x + b.r < CU_HOG)).map(b => b.n);
-  }
-  const cuAfter = (B, s) => { const out = new Set(cuOut(B, s)); return s.final.filter(b => !out.has(b.n)).map(b => ({ ...b, cue: false, sunk: false })); };
-  const cuDist = b => Math.hypot(b.x - CU_TEE, b.z);
-  // the end's score as the stones lie: the side nearest the button, and how many of its stones in the house are nearer than the other's nearest
-  function cuEndScore(stones){
-    const inH = stones.filter(b => cuDist(b) <= CU_HOUSE + b.r).sort((a, b) => cuDist(a) - cuDist(b));
-    if (!inH.length) return { side: -1, pts: 0 };
-    const side = cuSide(inH[0].n), other = inH.find(b => cuSide(b.n) !== side), lim = other ? cuDist(other) : Infinity;
-    return { side, pts: inH.filter(b => cuSide(b.n) === side && cuDist(b) < lim).length };
-  }
-  const cuValue = (stones, t) => { const e = cuEndScore(stones), mine = stones.filter(b => cuSide(b.n) === t).map(cuDist);
-    return (e.side === t ? e.pts : e.side < 0 ? 0 : -e.pts) - 0.04 * (mine.length ? Math.min(...mine) : 6); };
-  // the power that brings a lone stone, delivered straight, to rest d along the sheet (found by throwing one; kept)
-  const CU_POW = new Map();
-  function cuPowFor(d){
-    const k = Math.round(d * 4) / 4; if (CU_POW.has(k)) return CU_POW.get(k);
-    let lo = 1, hi = 80;
-    for (let i = 0; i < 22; i++){ const p = (lo + hi) / 2, st = strikeOf(0, 0, 0, p, MU_TIP, 0), sm = simCu([{ ...ballOf(26, 0, 0), r: CU_R, cue: true, x: -LX / 2 + 0.6 }], st.dir, st.speed, st.w, st.vy);
-      const f = sm && sm.final[0], went = f ? (f.sunk ? LX : f.x + LX / 2 - 0.6) : 0; if (went < k) lo = p; else hi = p; }
-    const p = (lo + hi) / 2; CU_POW.set(k, p); return p;
-  }
-  const cuKey = g => 'cr:' + g.idx + '@' + g.lv;
-  const cuNew = () => ({ turn: 0, hand: false, fouls: [0, 0], moves: [], end: 1, first: 0, thrown: [0, 0], pts: [0, 0], ends: [], over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0 });
-  function cuFinish(g, s){
-    const N = g.nine, t = N.turn, who = t === 0 ? 'you' : 'the computer', out = cuOut(g.balls, s), cue = g.balls.find(b => b.cue);
-    const stones = cuAfter(g.balls, s); N.thrown[t]++;
-    N.moves.push({ t, out: out.length, end: N.end });
-    const lost = out.filter(n => n !== (cue && cue.n)), mineOut = cue && out.includes(cue.n);
-    N.said = who + (mineOut ? ': the stone out' : ': in play') + (lost.length ? ', ' + lost.length + (lost.length > 1 ? ' stones' : ' stone') + ' knocked out' : '');
-    g.balls = stones;
-    if (N.thrown[0] + N.thrown[1] >= 2 * CU_STONES){
-      const e = cuEndScore(stones); N.ends.push(e); if (e.side >= 0) N.pts[e.side] += e.pts;
-      N.said += ' · end ' + N.end + ': ' + (e.side < 0 ? 'blank' : (e.side === 0 ? 'you ' : 'the computer ') + e.pts);
-      if (e.side >= 0) N.first = e.side;
-      N.end++; N.thrown = [0, 0]; g.balls = [];
-      if (N.end > CU_ENDS && N.pts[0] !== N.pts[1]){
-        N.over = N.pts[0] > N.pts[1] ? 1 : 2; N.said += ' · ' + (N.over === 1 ? 'you won' : 'the computer won') + ' ' + Math.max(...N.pts) + '–' + Math.min(...N.pts);
-        if (N.over === 1 && !g.auto){ const d = N.pts[0] - N.pts[1]; N.stars = d >= 3 ? 3 : d >= 2 ? 2 : 1; const k = cuKey(g); if (!(BEST[k] >= N.stars)){ BEST[k] = N.stars; ARCADE.save('trickshots.best', JSON.stringify(BEST)); } }
-      }
-      N.turn = N.first;
-    } else N.turn = 1 - t;
-    if (!N.over){ g.balls.push(cuStone(N.turn, N.thrown[N.turn], g.idx)); g.ang = 0; }
-    N.plan = null; N.gen = null; N.thinkAt = 0; g.anim = null; g.dirty = true; if (!g.auto) touch();
-  }
-  const CU_TRY = [{ offs: [0], tips: [0], pows: [1], hits: 0 }, { offs: [-0.02, 0, 0.02], tips: [0], pows: [1], hits: 1 },
-                  { offs: [-0.03, 0, 0.03], tips: [-0.4, 0, 0.4], pows: [0.97, 1.03], hits: 2 }, { offs: [-0.04, -0.015, 0.015, 0.04], tips: [-0.4, 0, 0.4], pows: [0.96, 1, 1.04], hits: 3 },
-                  { offs: [-0.05, -0.025, 0, 0.025, 0.05], tips: [-0.4, 0, 0.4], pows: [0.96, 1, 1.04], hits: 4 }];
-  function* cuPlanGen(g, lvIn){
-    const lv = Math.max(1, Math.min(5, lvIn || g.lv || 1)), T = CU_TRY[lv - 1], t = g.nine.turn, w = g.balls.find(b => b.cue);
-    const goals = [[CU_TEE, 0, 'draw'], [CU_TEE - 0.7, 0.6, 'draw'], [CU_TEE - 0.7, -0.6, 'draw'], [CU_TEE - 3.4, 0.3, 'guard']];
-    g.balls.filter(b => !b.cue && cuSide(b.n) !== t && cuDist(b) <= CU_HOUSE + b.r).sort((a, b) => cuDist(a) - cuDist(b)).slice(0, T.hits).forEach(b => goals.push([b.x, b.z, 'hit']));
-    let best = null;
-    for (const [gx, gz, kind] of goals){
-      const base = Math.atan2(gz - w.z, gx - w.x), d = Math.hypot(gx - w.x, gz - w.z), p0 = kind === 'hit' ? Math.min(60, cuPowFor(d) * 1.9) : cuPowFor(d); yield;
-      for (const off of T.offs) for (const tip of T.tips) for (const pk of T.pows){
-        const a = base + off + (kind === 'hit' ? 0 : -tip * 0.05), st = strikeOf(a, tip, 0, p0 * pk, MU_TIP, 0), sm = simCu(g.balls, st.dir, st.speed, st.w, st.vy); yield;
-        if (!sm) continue; const score = cuValue(cuAfter(g.balls, sm), t);
-        if (!best || score > best.score) best = { a, p: p0 * pk, tip: [tip, 0], score };
-      }
-    }
-    if (!best) best = { a: 0, p: cuPowFor(CU_TEE - CU_HACK[0]), tip: [0, 0], score: -9 };
-    const u1 = Math.random() || 1e-9, u2 = Math.random(), gauss = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-    return { a: best.a + gauss * CU_ERR[lv - 1] * D * 0.5, p: best.p * (1 + gauss * CU_ERR[lv - 1] * 0.006), tip: best.tip, score: best.score };
-  }
-  function cuTitle(g){
-    const N = g.nine, b = BEST[cuKey(g)], left = CU_STONES - N.thrown[N.turn] - 1;
-    return 'Curling — level ' + g.lv + ' · ' + (N.over ? (N.over === 1 ? (N.stars ? starStr(N.stars) + ' ' : '') + 'you won' : 'the computer won') + ', tap to play again'
-      : 'end ' + N.end + (N.end > CU_ENDS ? ' (extra)' : ' of ' + CU_ENDS) + ', ' + (N.turn === 0 ? 'your stone (red; the tip\'s side curls it)' : 'the computer\'s stone (yellow)') + ', ' + left + ' more after it')
-      + ' · you ' + N.pts[0] + ', the computer ' + N.pts[1]
-      + (N.said ? ' · ' + N.said : '') + (b ? ' · best ' + starStr(b) : '') + ' · power ' + g.power + ', tip ' + spinName(g.tip);
-  }
-  function cuAuto(idx, lvA, lvB = lvA, maxShots = 60){ const g = matchAuto('curl', idx, lvA, lvB, maxShots); return { shots: g.shots, over: g.nine.over, pts: g.nine.pts, ends: g.nine.ends, balls: g.balls }; }
+  /* (Curling, on the pool table, was here from Nov 25 ("lets do the same thing for curling that we did for bowling.   use the pool engine.") to
+     Nov 26: "Remove curling game.") */
   const GAMES = { get: k => GM().get(k), set: (k, v) => GM().set(k, v), has: k => GM().has(k), delete: k => GM().delete(k), clear: () => GM().clear(),
                   forEach: f => GM().forEach(f), values: () => GM().values(), keys: () => GM().keys(), get size(){ return GM().size; } };
   let LIVE = null, DRAG = null, ateAt = 0, TOLD = false;
@@ -57612,11 +57494,6 @@ const TRICK_APP = (() => {
     const W2 = BWL_DW, DITCHES = [[-LX / 2 - W2, -LZ / 2 - W2, LX / 2 + W2, -LZ / 2], [-LX / 2 - W2, LZ / 2, LX / 2 + W2, LZ / 2 + W2], [-LX / 2 - W2, -LZ / 2, -LX / 2, LZ / 2], [LX / 2, -LZ / 2, LX / 2 + W2, LZ / 2]];
     for (const [x0, z0, x1, z1] of ditch ? DITCHES : bare ? CUSHIONS_C : CUSHIONS3) out.push({ kind: 'tsBox', u: Ub((x0 + x1) / 2), v: Vb((z0 + z1) / 2), scale: Sb(1), sx: x1 - x0, sy: ditch ? 0.02 : CUSH_H, sz: z1 - z0, color: ditch ? DITCH_C : CUSH });
     if ((M() || {}).rt) for (const sg of [-1, 1]) out.push({ kind: 'tsBox', u: Ub(sg * (LX / 2 + CUSH_W / 2)), v: Vb(0), scale: Sb(1), sx: CUSH_W * 1.02, sy: CUSH_H * 1.04, sz: HK_GOAL, color: sg < 0 ? 0x2a4fb0 : 0xd23a2f });   // (pool hockey's goals: yours blue, the computer's red)
-    if ((M() || {}).curl){   // (curling: the ice, the house's rings, the far hog line, the tee line and the back line)
-      out.push({ kind: 'tsBox', u: Ub(0), v: Vb(0), scale: Sb(1), sx: LX, sy: 0.004, sz: LZ, color: 0xdfe9ef });
-      CU_RINGS.forEach(([r, col], k) => out.push({ kind: 'tsDisc', u: Ub(CU_TEE), v: Vb(0), scale: Sb(1), sx: 2 * r, sy: 0.2, sz: 2 * r, lift: Sb(0.008 + 0.006 * k), color: col }));   // (round, and as thin at every size: the smaller rings show over the larger)
-      for (const [x, col] of [[CU_HOG, 0xc23a32], [CU_TEE, 0x1d2a3a], [CU_BACK, 0x1d2a3a]]) out.push({ kind: 'tsBox', u: Ub(x), v: Vb(0), scale: Sb(1), sx: 0.07, sy: 0.02, sz: LZ, color: col });
-    }
     if ((M() || {}).bumper){   // (bumper pool: its two pockets, a ring of its side's colour round each, and its bumpers)
       BP_POCK.forEach(([x, z], k) => out.push({ kind: 'tsDot', u: Ub(x), v: Vb(z), scale: Sb(2 * POCK), color: 0x050506 }, { kind: 'tsRing', u: Ub(x), v: Vb(z), scale: Sb(2 * POCK + 0.3), color: k ? 0xc8312b : 0xece4cf }));
       for (const [x, z] of BP_POSTS) out.push({ kind: 'tsPost', u: Ub(x), v: Vb(z), scale: Sb(1), sx: 2 * BP_BR, sy: CUSH_H * 1.1, sz: 2 * BP_BR, color: 0x1c1c20 });
@@ -57671,8 +57548,6 @@ const TRICK_APP = (() => {
      sphere by its own longitude and latitude. */
   function ballTex(T, n){
     const cv = document.createElement('canvas'); cv.width = 256; cv.height = 128; const c = cv.getContext('2d'), col = n ? COLS[n] : '#f2f0ea';
-    if (n >= 26){ c.fillStyle = '#8d939c'; c.fillRect(0, 0, 256, 128); c.fillStyle = col; c.fillRect(0, 0, 256, 128 * 0.3); c.fillStyle = '#5d636b'; c.fillRect(0, 128 * 0.46, 256, 128 * 0.08);   // (curling: granite, a coloured cap, a dark band)
-      return new T.CanvasTexture(cv); }
     if (n >= 16){ c.fillStyle = col; c.fillRect(0, 0, 256, 128); if (n === 16 || n === 21){ c.fillStyle = '#1a1a1e'; c.fillRect(0, 128 * 0.42, 256, 128 * 0.16); }   // (bumper pool: no number, the marked one a dark band)
       return new T.CanvasTexture(cv); }
     c.fillStyle = n === 0 || n >= 9 ? '#f2f0ea' : col; c.fillRect(0, 0, 256, 128);
@@ -57684,7 +57559,7 @@ const TRICK_APP = (() => {
   }
   // the pieces' shapes, a unit across (a ball sits on the cloth; the cue lies along +x back from its tip, the field turning +x to the yaw)
   const geos = {
-    ...Object.fromEntries(Array.from({ length: 34 }, (_, n) => ['tsB' + n, T => { const g = new T.SphereGeometry(0.5, 24, 16); g.userData.map = ballTex(T, n); return g; }])),
+    ...Object.fromEntries(Array.from({ length: 26 }, (_, n) => ['tsB' + n, T => { const g = new T.SphereGeometry(0.5, 24, 16); g.userData.map = ballTex(T, n); return g; }])),
     tsTrail: T => { const g = FieldKit.disc(T, 0.5, 0.015, 12); g.userData.unlit = true; g.userData.opacity = 0.35; return g; },
     tsStar: T => { const sh = new T.Shape(); for (let k = 0; k < 10; k++){ const a = Math.PI / 2 + k * Math.PI / 5, r = k % 2 ? 0.2 : 0.5; k ? sh.lineTo(r * Math.cos(a), r * Math.sin(a)) : sh.moveTo(r * Math.cos(a), r * Math.sin(a)); }
       const g = new T.ShapeGeometry(sh); g.rotateX(-Math.PI / 2); g.translate(0, 0.03, 0); g.userData.unlit = true; return g; },
@@ -57698,7 +57573,6 @@ const TRICK_APP = (() => {
     tsTip: T => { const g = new T.SphereGeometry(0.5, 16, 12); g.userData.onTop = 2; return g; },
     tsTipIdle: T => new T.SphereGeometry(0.5, 16, 12),
     tsDot: T => { const g = FieldKit.disc(T, 0.5, 0.02, 12); g.userData.unlit = true; return g; },
-    tsDisc: T => { const g = FieldKit.disc(T, 0.5, 0.02, 64); g.userData.unlit = true; return g; },   // (curling's house: a round disc, Nov 25)
     tsRing: T => { const g = FieldKit.ring(T, 0.44, 0.5, 0.02, 40); g.userData.unlit = true; return g; },
     tsGhost: T => { // a ring in dashes, wander's dashed ghost ball
       const parts = [], n = 14;
@@ -57943,9 +57817,6 @@ const TRICK_APP = (() => {
     c.fillStyle = hex(WOOD2); c.beginPath(); c.roundRect ? c.roundRect(X(-BW / 2), Z(-BH / 2), BW * k, BH * k, 10) : c.rect(X(-BW / 2), Z(-BH / 2), BW * k, BH * k); c.fill();
     c.strokeStyle = 'rgba(255,255,255,.28)'; c.lineWidth = 2; c.stroke();
     c.fillStyle = hex(CLOTH); c.fillRect(X(-LX / 2), Z(-LZ / 2), LX * k, LZ * k);
-    if (m.curl){ c.fillStyle = '#dfe9ef'; c.fillRect(X(-LX / 2), Z(-LZ / 2), LX * k, LZ * k);
-      for (const [r, col] of CU_RINGS){ c.fillStyle = hex(col); c.beginPath(); c.arc(X(CU_TEE), Z(0), r * k, 0, 7); c.fill(); }
-      c.fillStyle = '#c23a32'; c.fillRect(X(CU_HOG) - 1, Z(-LZ / 2), 2, LZ * k); }
     if (m.bumper){ c.fillStyle = '#07090c'; for (const [x, z] of BP_POCK){ c.beginPath(); c.arc(X(x), Z(z), POCK * k * 0.8, 0, 7); c.fill(); }
       c.fillStyle = '#1c1c20'; for (const [x, z] of BP_POSTS){ c.beginPath(); c.arc(X(x), Z(z), Math.max(2, BP_BR * k), 0, 7); c.fill(); } }
     if (!m.bare && !m.rt){ c.fillStyle = '#07090c'; for (const [x, z] of POCKETS){ c.beginPath(); c.arc(X(x), Z(z), POCK * k * 0.8, 0, 7); c.fill(); } }
@@ -58454,12 +58325,6 @@ const TRICK_APP = (() => {
       const d = sz * 0.07; [1, 2, 3, 4].forEach((n, row) => { for (let j = 0; j < n; j++) dot(ctx, sz * 0.6 + row * d * 1.4, sz * 0.5 + (j - (n - 1) / 2) * d * 1.6, d * 0.5, ['#e3c33b', '#2f5fd0', '#d23a2f', '#6b3fa0', '#e0782a', '#2e8b57', '#7a2f2a', '#16161a', '#e3c33b', '#2f5fd0'][row * (row + 1) / 2 + j]); });
       dot(ctx, sz * 0.2, sz * 0.5, d * 0.55, '#f2f0ea'); },
     debug: { rackB, simB, bwlDown, bwlFinish, bwlPlanGen, bwlAuto, bwlTitle, bwlCleared, BWL_SPOT, BWL_ERR, BWL_SEE, BWL_R, BWL_DW, BWL_GRP, BWL_PAIRS, BWL_MID, BWL_EIGHT } });
-  app.curl = matchApp(MATCH.curl, { name: 'Curling', hint: 'four stones each an end, the side nearest the button scores; the tip\'s side curls the stone',
-    level: 'How steady the computer\'s hand is, how many shots it weighs and how far your own stone is seen ahead; the ice curls more farther out.', again: 'Start this board again', againTip: 'The first end again, your stone at the hack.',
-    icon(ctx, sz){ TABLE_ICON(ctx, sz, false); ctx.fillStyle = '#dfe9ef'; ctx.fillRect(sz * 0.12, sz * 0.3, sz * 0.76, sz * 0.4);
-      for (const [r, c] of [[0.16, '#2f6fc0'], [0.1, '#f4f4f2'], [0.05, '#d23a2f']]){ ctx.fillStyle = c; ctx.beginPath(); ctx.arc(sz * 0.7, sz * 0.5, sz * r, 0, 7); ctx.fill(); }
-      for (const [x, y, c] of [[0.62, 0.45, '#d8332c'], [0.76, 0.56, '#f2c230'], [0.24, 0.5, '#d8332c']]){ dot(ctx, x * sz, y * sz, sz * 0.045, '#8d939c'); dot(ctx, x * sz, y * sz, sz * 0.028, c); } },
-    debug: { rackCu, simCu, cuOut, cuAfter, cuEndScore, cuValue, cuPowFor, cuFinish, cuPlanGen, cuAuto, cuTitle, cuIce, strike: (a, tip, pw) => strikeOf(a, tip, 0, pw, MU_TIP, 0), CU_TEE, CU_HOUSE, CU_HOG, CU_BACK, CU_HACK, CU_R, CU_STONES, CU_ENDS } });
   app.bumper = matchApp(MATCH.bumper, { name: 'Bumper pool', hint: 'your reds into the far pocket, the marked one first; the first with all five in wins',
     level: 'How steady the computer\'s hand is, how many shots it tries and how far your own ball is seen ahead; a step harder farther out.', again: 'Start this board again', againTip: 'The ten balls on their places, your shot.',
     icon(ctx, sz){ TABLE_ICON(ctx, sz, false);
@@ -58475,7 +58340,6 @@ const EIGHTBALL_APP = TRICK_APP.eight;   // (8-ball against the computer, on the
 const STRAIGHT_APP = TRICK_APP.straight;   // (straight pool, 14.1, against the computer, on the same engine, Nov 22)
 const ONEPOCKET_APP = TRICK_APP.one;   // (one-pocket against the computer, on the same engine, Nov 22)
 const BANKPOOL_APP = TRICK_APP.bank;   // (bank pool against the computer: only a ball off a cushion counts, Nov 23)
-const CURLING_APP = TRICK_APP.curl;   // (curling on the pool table, Nov 25)
 const BUMPER_APP = TRICK_APP.bumper;   // (bumper pool on the pool table, Nov 25)
 const BOWLING_APP = TRICK_APP.bowl;   // (bowling on the pool table: the pins ten pool balls, bowling's rules, Nov 25)
 const POOLHOCKEY_APP = TRICK_APP.hockey;   // (pool hockey: the pool engine stepped in real time, Nov 22)
@@ -61754,8 +61618,8 @@ const SQUASH_APP = (() => {
   };
   return app;
 })();
-/* Curling (Oct 28) was a sheet of its own here, with its pull bar (`PULL_BAR`, Nov 23); since Nov 25 ("lets do the same thing for curling that we
-   did for bowling.   use the pool engine.") it is a game on the pool table, `MATCH.curl` in TRICK SHOTS (CURLING, ON THE POOL TABLE). */
+/* Curling (Oct 28) was a sheet of its own here, with its pull bar (`PULL_BAR`, Nov 23); from Nov 25 a game on the pool table, and since Nov 26
+   ("Remove curling game.") no more. */
 /* Bowling (Oct 28) was a lane of its own here; since Nov 25 ("Let's rewrite it to use the pool engine and camera.   The pins should be pool
    balls but otherwise follow bowling rules.") it is a game on the pool table, `MATCH.bowl` in TRICK SHOTS (BOWLING, ON THE POOL TABLE). */
 /* ═══ MARBLE RUN (Oct 28: "2,   3 curling, bowling, marble run", the third of the new games: "build a track in the bottom row,
@@ -65210,7 +65074,7 @@ const WAR_APP = (() => {
   };
   return app;
 })();
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, BUMPER_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, WAR_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, NINEBALL_APP, EIGHTBALL_APP, STRAIGHT_APP, ONEPOCKET_APP, BANKPOOL_APP, CAROM_APP, POOLHOCKEY_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, BOWLING_APP, BUMPER_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, WAR_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, NINEBALL_APP, EIGHTBALL_APP, STRAIGHT_APP, ONEPOCKET_APP, BANKPOOL_APP, CAROM_APP, POOLHOCKEY_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -65219,7 +65083,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [BLOCKOUT_APP, 'blockout'], [SOMA_APP, 'soma'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [BUMPER_APP, 'bumperpool'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [WAR_APP, 'boardwar'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [NINEBALL_APP, 'nineball'], [EIGHTBALL_APP, 'eightball'], [STRAIGHT_APP, 'straightpool'], [ONEPOCKET_APP, 'onepocket'], [BANKPOOL_APP, 'bankpool'], [CAROM_APP, 'threecushion'], [POOLHOCKEY_APP, 'poolhockey'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [BOWLING_APP, 'bowling'], [BUMPER_APP, 'bumperpool'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [WAR_APP, 'boardwar'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [NINEBALL_APP, 'nineball'], [EIGHTBALL_APP, 'eightball'], [STRAIGHT_APP, 'straightpool'], [ONEPOCKET_APP, 'onepocket'], [BANKPOOL_APP, 'bankpool'], [CAROM_APP, 'threecushion'], [POOLHOCKEY_APP, 'poolhockey'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],
@@ -65233,7 +65097,7 @@ SHARE.install(CHESS_APP, (c, r, P) => chessTakeSetup(P));   // (chess's own shar
   const DONE = { blockout: g => g.state === 'done', soma: g => g.state === 'done', bejeweled: g => g.state === 'won', sokoban: g => !!g.solved,
     tiltmaze: g => g.state === 'done', pinball: g => g.state === 'over', simon: g => g.state === 'over', lightsout: g => !!g.done,
     whackamole: g => g.state === 'over', nonograms: g => g.state === 'solved', tanks: g => g.state === 'over', pong: g => g.state === 'over',
-    airhockey: g => g.state === 'over', squash: g => g.state === 'over', curling: g => !!(g.nine && g.nine.over), bowling: g => !!(g.nine && g.nine.over), bumperpool: g => !!(g.nine && g.nine.over),
+    airhockey: g => g.state === 'over', squash: g => g.state === 'over', bowling: g => !!(g.nine && g.nine.over), bumperpool: g => !!(g.nine && g.nine.over),
     marblerun: g => g.state === 'won', trickshots: g => !!(g.ch && g.solvedIn) };
   /* Every other game with its boards' games in `_debug.GAMES` and an `onReset` is read by the words its own state uses for an end
      (Nov 1: "double click is still not reseting the board": the first cut named seventeen games; Snake, Tetris, 2048 and the

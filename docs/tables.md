@@ -1,6 +1,6 @@
 # Table and ball games
 
-Pinball, Pong, air hockey, squash, curling, bowling, bumper pool, marble run, the tanks, trick shots, and the three taken out.
+Pinball, Pong, air hockey, squash, bowling, bumper pool, marble run, the tanks, trick shots, and the three taken out.
 
 Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood there: the dated notes of what was built, with the owner's words, the names to search for in `games.html` and the numbers measured. `CLAUDE.md` keeps the rules; read this before working on this part, and add to it when you change it. A later note overrides an earlier one where they differ (several say so).
 
@@ -1522,3 +1522,8 @@ the gutter, it is a scratch.").
   a shot. The white is no longer played from the ditch (the code for it in `simB` stays and is no longer reached).
 - Part 7's bowling check adds a scratch passing the turn with the white in hand and the 8 on a scratch losing; passing. Part 5's replay check
   passing. A probe: Replay greyed before the first shot, live after it.
+
+**Curling taken out** (Nov 26: "Remove curling game.   Create new pool game called bumper pool."). Curling on the pool table (`MATCH.curl`,
+`CURLING_APP`, its stones' textures 26–33, the house's `tsDisc`, its drawing on the table and the minimap) is gone, as are its id `curling` and its
+part 7 check; the notes above stand as the record. Bumper pool was already made (Nov 25, `BUMPER_APP`, id `bumperpool`), so nothing new was
+made for the second half: it stands beside bowling in the list where curling stood before it.
