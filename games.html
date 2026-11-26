@@ -965,18 +965,9 @@
   body .chip:hover { background: var(--dchip-bg-hover); border-color: var(--dchip-line-hover); }
   body .chip[aria-pressed="true"] { background: var(--dgold); color: #14141a !important; border-color: rgba(212, 160, 82, .9); }
   #playPad button { border-radius: 16px; border: 1px solid var(--dchip-line); background: var(--dchip-bg); color: #e6e4ee; box-shadow: var(--dchip-shadow); }
-  /* (THE TOOL BAR, Nov 26: small square icon buttons, no words, in the middle at the foot of the screen, above the dots or the open row) */
-  /* (Nov 26: "It should still be on the bottom and wrap around if the buttons extend beyond the screen width.": at the foot of the screen with the
-     row shut, above the row with it open; as wide as its buttons up to the screen less 16px a side (`width: max-content`: centred by `left: 50%`
-     alone it would wrap at half the screen), past that onto more lines, growing upward) */
-  #toolBar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--bb-h) + var(--bb-bottom) + 6px); z-index: 30; display: flex; gap: 6px;
-             padding: 4px; border-radius: 12px; background: rgba(12, 13, 18, .45); pointer-events: auto; width: max-content; max-width: calc(100vw - 32px); box-sizing: border-box;
-             flex-wrap: wrap; justify-content: center; }
-  body.bb-collapsed #toolBar { bottom: var(--bb-bottom); }
-  #toolBar button { width: 38px; height: 38px; padding: 0; font-size: 1.2rem; line-height: 1; border-radius: 10px; border: 1px solid var(--dchip-line); background: var(--dchip-bg);
-                    color: #e6e4ee; box-shadow: var(--dchip-shadow); cursor: pointer; touch-action: manipulation; display: flex; align-items: center; justify-content: center; }
-  #toolBar button.on { border-color: var(--dgold); box-shadow: 0 0 0 1.5px var(--dgold), var(--dchip-shadow); color: var(--dgold); }
-  #toolBar button.dim { opacity: .45; }
+  /* (THE TOOL BAR's icons are chips in the games toolbar's ring since Nov 26: toolBarTick) */
+  #gameBar > .tchip { font-size: 1.2rem; line-height: 1; }
+  #gameBar > .tchip.dim { opacity: .45; }
   #playPad button:active { box-shadow: inset 0 2px 5px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .04); }
   #playPad button.on { border-color: var(--dgold); box-shadow: 0 0 0 1.5px var(--dgold), var(--dchip-shadow); color: var(--dgold); }
   #boardBrowser .bb-ico { border-radius: 12px; border-color: var(--dchip-line); box-shadow: var(--dchip-shadow); }
@@ -13844,6 +13835,11 @@ function playPadTick(a){
    (wrapping onto more lines past the screen's width, Nov 26). The
    one marked `on` is ringed. A press reaches `onToolTap(c, r, index)`. It is not the row of boards (that stays as it was, opened by its dots) nor
    the play pad (the big round buttons, `playActs`); it is drawn as draw's buttons are. Rebuilt only when what it shows changes. */
+/* (Nov 26: "It should still use the fisheye wrap around.  Air raid should use this to."): the tool bar's icons are chips in the games toolbar,
+   the bottom strip laid out as a fisheye ring (`#gameBar`, `makeRing`, Sep 27), where Air raid's weapon chips already are: in one even row while
+   they fit, a ring that wraps round and spins under a drag or the wheel when they do not. A chip a tile (`tchip`), the one marked `on` pressed
+   (`aria-pressed`, draw's gold), `dim` faded; added and taken away as the game's tiles change, and the ring re-lays itself when they do. The bar
+   of its own (`#toolBar`, at the foot of the screen, wrapping onto more lines) it had for an hour is gone. */
 let _toolBarSig = null;
 function toolBarTick(a){
   let f = null, L = null;
@@ -13852,26 +13848,20 @@ function toolBarTick(a){
   const sig = L && L.length ? L.map(q => q.glyph + '|' + (q.title || '') + (q.on ? '+' : '') + (q.dim ? '-' : '')).join(',') : '';
   if (sig === _toolBarSig) return;
   _toolBarSig = sig;
-  let bar = document.getElementById('toolBar');
-  if (!sig){ if (bar) bar.remove(); return; }
-  if (!bar){
-    bar = document.createElement('div'); bar.id = 'toolBar';
-    for (const ev of ['pointerdown', 'pointerup', 'pointermove', 'pointercancel', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'wheel', 'click']) bar.addEventListener(ev, e => e.stopPropagation());
-    document.body.appendChild(bar);
-  }
-  bar.textContent = '';
-  L.forEach((q, i) => {
-    const b = document.createElement('button');
-    b.type = 'button'; b.title = q.title || ''; b.setAttribute('aria-label', b.title); b.dataset.i = i;
-    if (q.on) b.classList.add('on'); if (q.dim) b.classList.add('dim');
-    b.textContent = q.glyph;
-    b.addEventListener('click', () => {
-      try { const a2 = window.getFieldApp && window.getFieldApp(), f2 = bbFramedCell(); if (a2 && a2.onToolTap && f2) a2.onToolTap(f2.c, f2.r, i); }
-      catch (err){ _reportError('tool bar', err); }
-      _toolBarSig = null; try { toolBarTick(window.getFieldApp && window.getFieldApp()); } catch {} try { restWake(); } catch {}
-    });
-    bar.appendChild(b);
-  });
+  const ring = document.getElementById('gameBar'); if (!ring) return;
+  const old = [...ring.querySelectorAll(':scope > .tchip')];
+  if (!sig){ old.forEach(b => b.remove()); return; }
+  // (the same count: each chip's face changed in place, so the ring keeps its turn; else new chips)
+  if (old.length !== L.length){ old.forEach(b => b.remove()); old.length = 0;
+    L.forEach((q, i) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'panel chip tchip'; b.dataset.i = i;
+      b.addEventListener('click', e => { e.stopPropagation();
+        try { const a2 = window.getFieldApp && window.getFieldApp(), f2 = bbFramedCell(); if (a2 && a2.onToolTap && f2) a2.onToolTap(f2.c, f2.r, +b.dataset.i); }
+        catch (err){ _reportError('tool bar', err); }
+        _toolBarSig = null; try { toolBarTick(window.getFieldApp && window.getFieldApp()); } catch {} try { restWake(); } catch {} });
+      ring.appendChild(b); old.push(b); }); }
+  L.forEach((q, i) => { const b = old[i]; b.textContent = q.glyph; b.title = q.title || ''; b.setAttribute('aria-label', b.title);
+    b.setAttribute('aria-pressed', q.on ? 'true' : 'false'); b.classList.toggle('dim', !!q.dim); });
+  try { window.__gameRing && window.__gameRing.layout(); } catch {}
 }
 let _bbQuickSig = null;
 function bbQuickTick(a){

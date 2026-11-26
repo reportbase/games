@@ -184,18 +184,18 @@ try {
     const gs = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = D.GAMES.get(f.c + '_' + f.r); return g ? { tool: g.tool, st: g.st.map(s => s.join('')).join('|'), moves: g.moves } : null; });
     // (the colours are the tool bar's small icons since Nov 26: "Let's make a second type of object browser on the bottom. … It should always be
     //  visible for small icons with no text."; the pad has none; a real click on each)
-    for (let k = 0; k < 10 && !(await page.evaluate(() => document.querySelectorAll('#toolBar button').length)); k++) await frame(page, 250);
-    const row = () => page.evaluate(() => [...document.querySelectorAll('#toolBar button')].map(b => b.title.split(/[:(]/)[0].trim() + (b.classList.contains('on') ? '*' : '') + (b.classList.contains('dim') ? '-' : '')).join(','));
-    const tile = async name => { const p = await page.evaluate(n => { const b = [...document.querySelectorAll('#toolBar button')].find(b => b.title.startsWith(n)); if (!b) return null; const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }, name);
+    for (let k = 0; k < 10 && !(await page.evaluate(() => document.querySelectorAll('#gameBar > .tchip').length)); k++) await frame(page, 250);
+    const row = () => page.evaluate(() => [...document.querySelectorAll('#gameBar > .tchip')].map(b => b.title.split(/[:(]/)[0].trim() + (b.getAttribute('aria-pressed') === 'true' ? '*' : '') + (b.classList.contains('dim') ? '-' : '')).join(','));
+    const tile = async name => { const p = await page.evaluate(n => { const b = [...document.querySelectorAll('#gameBar > .tchip')].find(b => b.title.startsWith(n)); if (!b) return null; const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }, name);
       if (p) await page.mouse.click(p[0], p[1]); };
-    const bar = await page.evaluate(() => { const t = document.getElementById('toolBar'), h = document.getElementById('bbHandle'), rt = t && t.getBoundingClientRect(), rh = h && h.getBoundingClientRect();
-      return { shut: document.body.classList.contains('bb-collapsed'), shown: !!t && getComputedStyle(t).display !== 'none' && rt.height > 0, atBottom: !!rt && innerHeight - rt.bottom <= 12, words: t ? /[A-Za-z]/.test(t.innerText) : true, n: t ? t.children.length : 0 }; });   // (the dots are away when the row has nothing: the block builder puts nothing there now)
+    const bar = await page.evaluate(() => { const C = [...document.querySelectorAll('#gameBar > .tchip')], rs = C.map(c => c.getBoundingClientRect()), lo = Math.max(...rs.map(r => r.bottom));
+      return { shut: document.body.classList.contains('bb-collapsed'), shown: C.length > 0 && rs.every(r => r.height > 0), atBottom: innerHeight - lo <= 24, words: C.some(c => /[A-Za-z]/.test(c.innerText)), n: C.length, oneRow: new Set(rs.map(r => Math.round(r.top))).size === 1 }; });   // (the dots are away when the row has nothing: the block builder puts nothing there now)
     const row0 = await row(), padKeys = await page.evaluate(() => [...document.querySelectorAll('#playPad button')].map(b => b.dataset.key).join());
-    // (Nov 26: "It should still be on the bottom and wrap around if the buttons extend beyond the screen width.": on a screen 150px wide the bar
-    //  wraps onto more lines and stays inside it, at the bottom)
+    // (Nov 26: "It should still use the fisheye wrap around.": on a screen 150px wide the games toolbar's ring takes over: the chips on one line,
+    //  fewer of them shown at once, the strip taking the drag that turns it)
     const vp = page.viewportSize(); await page.setViewportSize({ width: 150, height: vp.height }); await drawn(page, 400);
-    const wrap = await page.evaluate(() => { const t = document.getElementById('toolBar'), r = t.getBoundingClientRect(), b = [...t.children].map(e => e.getBoundingClientRect().top);
-      return new Set(b.map(Math.round)).size > 1 && r.left >= 0 && r.right <= innerWidth && innerHeight - r.bottom <= 12; });
+    const wrap = await page.evaluate(() => { const g = document.getElementById('gameBar'), C = [...g.querySelectorAll(':scope > .tchip')].filter(c => c.style.display !== 'none'), rs = C.map(c => c.getBoundingClientRect());
+      return g.style.pointerEvents === 'auto' && C.length < 4 && C.length > 0 && rs.every(r => r.left >= -24 && r.right <= innerWidth + 24) && new Set(rs.map(r => Math.round(r.top))).size === 1; });
     await page.setViewportSize(vp); await drawn(page, 400); await page.evaluate(() => window.__settle && window.__settle());
     await tile('Set blue'); await drawn(page, 300);
     const t1 = await gs(), row1 = await row();
@@ -215,9 +215,9 @@ try {
       const look = () => A.cellItems(c, r).filter(i => i.kind === 'blkCube').length, seen = new Set();
       for (let k = 0; k < 12; k++){ seen.add(look()); await new Promise(ok => setTimeout(ok, 400)); } return seen.size; });
     const ok = bk.models === '40,40,40,40,40' && bk.built === 'true,true,3' && bk.removed === '0,2' && bk.wrong === false
-      && live.bar.shut && live.bar.shown && live.bar.atBottom && !live.bar.words && live.wrap === true && live.bar.n === 4 && live.row0 === 'Set red blocks*,Set blue blocks,Remove,Undo the last move-' && /^Set red blocks,Set blue blocks\*/.test(live.row1) && !/c0|c1|x/.test(live.padKeys) && live.tool === 1 && live.set === '1' && live.off === '' && live.moves === 2 && live.toolX === -1 && live.undo1 === '1:1' && live.undo2 === ':0' && !live.menuStart && shown >= 3;
+      && live.bar.shut && live.bar.shown && live.bar.atBottom && live.bar.oneRow && !live.bar.words && live.wrap === true && live.bar.n === 4 && live.row0 === 'Set red blocks*,Set blue blocks,Remove,Undo the last move-' && /^Set red blocks,Set blue blocks\*/.test(live.row1) && !/c0|c1|x/.test(live.padKeys) && live.tool === 1 && live.set === '1' && live.off === '' && live.moves === 2 && live.toolX === -1 && live.undo1 === '1:1' && live.undo2 === ':0' && !live.menuStart && shown >= 3;
     if (!ok) failures.push('[block builder] ' + JSON.stringify({ bk, live, shown }));
-    console.log(`${ok ? 'ok  ' : 'FAIL'} block builder (models of every level in their bands, one piece, no stack too tall; built by its own order at par, 3 stars; the remove tool; a wrong colour not done; the tool bar up with the row shut at the very bottom, wrapping on a narrow screen, an icon a button and no words, the chosen one ringed and none on the pad, a real click on blue and a real click setting a block of it, Remove and a real click taking it off, a real click on Undo and a real Z taking both back, no Start this board again in the menu; a board no one plays building, ${shown} looks)`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} block builder (models of every level in their bands, one piece, no stack too tall; built by its own order at par, 3 stars; the remove tool; a wrong colour not done; the tool bar's chips in the games toolbar's ring at the bottom, one row, a fisheye ring on a narrow screen, an icon a button and no words, the chosen one ringed and none on the pad, a real click on blue and a real click setting a block of it, Remove and a real click taking it off, a real click on Undo and a real Z taking both back, no Start this board again in the menu; a board no one plays building, ${shown} looks)`);
   }
 
 

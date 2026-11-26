@@ -85,8 +85,8 @@ a new game or a change keeps to them.
   the game's. A long press does nothing to the bottom row (Nov 22; Minesweeper keeps its flag): the dots open it, its × shuts it.
 - **Games play with the row shut.** The row never opens by itself; what a gesture cannot do
   goes on the play pad (`playActs`). An editor's row is opened by its ✎ or menu item.
-  Small tools always at hand (a palette, undo) go on the tool bar (`toolTiles`, `onToolTap`, Nov 26): icons only, always
-  up at the foot of the screen.
+  Small tools always at hand (a palette, undo) go on the tool bar (`toolTiles`, `onToolTap`, Nov 26): icons only, chips in the
+  games toolbar's fisheye ring (`#gameBar`) at the foot of the screen, where Air raid's weapons are.
 - **A click selects a board, a click on the selected board brings it in** (Nov 21, `docs/field.md`): no double tap goes to another board, and there is
   no Home page: the page reopens the game last in.
 - **No notices from games.** `BOARD_KIT.say` does nothing; a board's title and the board

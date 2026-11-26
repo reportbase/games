@@ -714,3 +714,7 @@ on a board built. Part 7's check: the row's Undo putting back the block taken of
 **Block builder: the tool bar** (Nov 26, the same day: "Block builder should use this second browser."). The colours, Remove and Undo are the new
 tool bar's small icons (`toolTiles`, `onToolTap`; docs/field.md), always at the foot of the screen; the row of boards has nothing from this game
 now (so no dots for it, as Lights Out). Undo is faded while there is nothing to undo.
+
+**Block builder: in the games toolbar's ring** (Nov 26: "It should still use the fisheye wrap around."). The colours, ⌫ and ↶ are
+chips in `#gameBar`, the fisheye ring Air raid's weapons stand in (docs/field.md): one row while they fit, the ring turning by a drag on a
+narrow screen.
