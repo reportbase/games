@@ -97,6 +97,9 @@ try {
       let h = fresh(); out.turns = [play(h, [3]), play(h, [3, 11]), play(h, [3, 11]), play(h, [3, 11, 1, 2, 4, 5, 6, 7]), play(h, [3, 11, 1, 2, 4, 5, 6, 7, 8])].join(' ');
       out.stars = [h.nine.stars, /you won/.test(D.bwlTitle(h))].join();
       h = fresh(); out.lost = [play(h, [9]), play(h, [9, 8])].join(' ');
+      // a scratch (Nov 26): the white in the gutter passes the turn though one of yours went in, the white in hand on the head string; the 8 on a scratch loses
+      h = fresh(); out.scratch = [play(h, [3], true), h.nine.hand, h.balls[0].x === -5 && !h.balls[0].ditch, /scratch/.test(h.nine.said)].join();
+      h = fresh(); play(h, [1, 2, 3, 4, 5, 6]); out.scratch8 = play(h, [1, 2, 3, 4, 5, 6, 7, 8], true);
       // the ditch in a shot
       { const B0 = D.rackB(0), sd = D.simB(B0, Math.PI / 3, 40, [0, 0, 0], 0), w0 = sd.final[0];
         out.fell = w0.ditch && !w0.sunk && (Math.abs(Math.abs(w0.z) - oz) < 1e-6 || Math.abs(Math.abs(w0.x) - ox) < 1e-6);
@@ -124,12 +127,12 @@ try {
       const at = k => JSON.stringify(Array.from(R.s.frames[Math.floor(k * (R.s.frames.length - 1))]).map(v => isNaN(v) ? null : +v.toFixed(2)));
       return { shots: R.shots, over: R.over, moves: at(0) !== at(1), again: D.nineRecSoon(40) === R, kind: R.S.kind }; });
     const ok = bw && !bw.none && bw.rack && bw.name === 'Bowling' && bw.start === '16,true,0,true'
-      && bw.turns === '0;1/0;0 1;1/1;0 0;1/1;0 0;7/1;0 0;7/1;1' && bw.stars === '3,true' && bw.lost === '1;0/1;0 1;0/1;1'
+      && bw.turns === '0;1/0;0 1;1/1;0 0;1/1;0 0;7/1;0 0;7/1;1' && bw.stars === '3,true' && bw.lost === '1;0/1;0 1;0/1;1' && bw.scratch === '1;1/0;0,true,true,true' && bw.scratch8 === '0;7/0;2'
       && bw.fell && bw.along === 'true,true,true' && bw.glance === 'true,true' && bw.block === 'true,true' && bw.plan
       && went && went.shots === 1 && after && !after.anim && after.moves === 1
       && rec.kind === 'bowl' && rec.shots >= 3 && rec.moves && rec.again;
     if (!ok) failures.push('[bowling] ' + JSON.stringify({ bw, went, after, rec }));
-    console.log(`${ok ? 'ok  ' : 'FAIL'} bowling on the pool table (the full rack, the solids and the stripes racked fairly and the 8 in the middle; the turn kept by clearing one's own, passed otherwise, all seven then the 8 a win, the 8 too soon a loss; a ball off the side on the ditch's line, one in it knocked along it, one keeping another out; the real Enter bowled; a board no one plays bowled ${rec.shots} balls${rec.over ? ', to a win' : ''})`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} bowling on the pool table (the full rack, the solids and the stripes racked fairly and the 8 in the middle; the turn kept by clearing one's own, passed otherwise, all seven then the 8 a win, the 8 too soon a loss, a scratch passing the turn with the white in hand, the 8 on a scratch a loss; a ball off the side on the ditch's line, one in it knocked along it, one keeping another out; the real Enter bowled; a board no one plays bowled ${rec.shots} balls${rec.over ? ', to a win' : ''})`);
   }
 
   // BUMPER POOL (Nov 25: "Then create a bumper pool game."): the rack (five a side, no white, the marked one struck first); on balls made up a ball
