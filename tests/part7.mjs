@@ -30,10 +30,13 @@ try {
     await drawn(page, 1500); await page.evaluate(() => window.__settle && window.__settle());
     const bw = await page.evaluate(() => {
       const A = window.getFieldApp(), D = A._debug, out = {}, LX = 20, LZ = 10, oz = LZ / 2 + D.BWL_DW / 2, ox = LX / 2 + D.BWL_DW / 2, G = D.BWL_GRP;
-      const B = D.rackB(7), sp = b => D.BWL_SPOT[b.spot], at = s => B.find(b => b.spot === s), grp = b => G[0].includes(b.n) ? 0 : G[1].includes(b.n) ? 1 : -1;
+      const B = D.rackB(7), sp = b => D.bwlSpots(7)[b.spot], at = s => B.find(b => b.spot === s), grp = b => G[0].includes(b.n) ? 0 : G[1].includes(b.n) ? 1 : -1;
       out.rack = B.length === 16 && B[0].cue && B.every(b => b.r === D.BWL_R) && B.slice(1).every(b => b.x === sp(b)[0] && b.z === sp(b)[1] && Math.abs(b.x) < LX / 2 - b.r)
         && [...D.BWL_PAIRS, D.BWL_MID].every(([p, q]) => grp(at(p)) + grp(at(q)) === 1 && grp(at(p)) >= 0) && at(D.BWL_EIGHT).n === 8
         && JSON.stringify(D.rackB(7)) === JSON.stringify(B);
+      // a rack a board (Nov 26: "5"): the spacing and the place differ by board, the last row always on the table
+      { const racks = [0, 7, 41, 300, 2024].map(i => D.rackB(i)); out.racks = new Set(racks.map(R => R.slice(1).map(b => b.x.toFixed(2)).join())).size >= 4
+          && racks.every(R => R.every(b => Math.abs(b.x) < LX / 2 - b.r && Math.abs(b.z) < 5 - b.r)); }
       const L = D.LIVE, k = L && L.c + '_' + L.r; if (!k) return { ...out, none: true };
       out.name = A.name; out.start = (() => { const g = D.GAMES.get(k) || D.gameAt(L.c, L.r); return [g.balls.length, g.nine.hand, g.nine.turn, /^Bowling/.test(D.bwlTitle(g))].join(); })();
       const fresh = () => { D.GAMES.delete(k); return D.gameAt(L.c, L.r); };
@@ -73,7 +76,7 @@ try {
     const rec = await page.evaluate(() => { const D = window.getFieldApp()._debug, R = D.nineRecSoon(40, true);
       const at = k => JSON.stringify(Array.from(R.s.frames[Math.floor(k * (R.s.frames.length - 1))]).map(v => isNaN(v) ? null : +v.toFixed(2)));
       return { shots: R.shots, over: R.over, moves: at(0) !== at(1), again: D.nineRecSoon(40) === R, kind: R.S.kind }; });
-    const ok = bw && !bw.none && bw.rack && bw.name === 'Bowling' && bw.start === '16,true,0,true'
+    const ok = bw && !bw.none && bw.rack && bw.racks && bw.name === 'Bowling' && bw.start === '16,true,0,true'
       && bw.turns === '0;1/0;0 1;1/1;0 0;1/1;0 0;7/1;0 0;7/1;1' && bw.stars === '3,true' && bw.lost === '1;0/1;0 1;0/1;1' && bw.scratch === '1;1/0;0,true,true,true' && bw.scratch8 === '0;7/0;2'
       && bw.fell && bw.along === 'true,true,true' && bw.glance === 'true,true' && bw.block === 'true,true' && bw.plan
       && went && went.shots === 1 && after && !after.anim && after.moves === 1
@@ -94,6 +97,19 @@ try {
       const A = window.getFieldApp(), D = A._debug, out = {};
       const B = D.rackBp(); out.rack = B.length === 10 && !B.some(b => b.n === 0) && B.filter(b => b.cue).map(b => b.n).join() === '16'
         && B.every(b => b.x === D.BP_START[b.n][0] && b.z === D.BP_START[b.n][1]);
+      // a table a board (Nov 26: "5"): the same turned a half turn; the guards closer and more bumpers farther out; every bumper clear; the patterns vary
+      { const GS = Math.round(Math.sqrt(window.FIELD_ST.N)), idxs = [];
+        for (let i = 0; i < 4000 && idxs.length < 60; i += 37) idxs.push(i);
+        const lays = idxs.map(i => ({ i, lv: D.levelOf ? null : null, L: D.bpLayout(i) }));
+        const sym = L => L.posts.every(([x, z]) => L.posts.some(([a, b]) => Math.abs(a + x) < 1e-9 && Math.abs(b + z) < 1e-9));
+        const clearOf = L => L.posts.every(([x, z], j) => L.posts.every(([a, b], k) => k === j || Math.hypot(a - x, b - z) >= 2 * 0.32 + 0.5)
+          && Object.values(D.BP_START).every(([a, b]) => Math.hypot(a - x, b - z) >= 0.45 + 0.32 + 0.4));
+        const byGw = new Map(); lays.forEach(({ L }) => byGw.set(L.gw.toFixed(3), L.posts.length));
+        const gws = [...byGw.keys()].map(Number).sort((a, b) => b - a);
+        out.lays = [lays.every(({ L }) => sym(L) && clearOf(L)), new Set(lays.map(({ L }) => L.pat)).size >= 3,
+          gws.length >= 2 && byGw.get(gws[0].toFixed(3)) <= byGw.get(gws[gws.length - 1].toFixed(3))].join();
+        // the shot reads the board's own bumpers
+        const far = lays.find(({ L }) => L.posts.length > 8); out.layShot = !!far && D.bpPostsOf(D.rackBp(far.i)).length === far.L.posts.length; }
       const L = D.LIVE, k = L && L.c + '_' + L.r; if (!k) return { ...out, none: true };
       out.name = A.name; out.start = (() => { const g = D.GAMES.get(k) || D.gameAt(L.c, L.r); return [g.balls.length, g.nine.turn, g.balls.find(b => b.cue).n, /^Bumper pool/.test(D.bpTitle(g))].join(); })();
       const fresh = () => { D.GAMES.delete(k); return D.gameAt(L.c, L.r); };
@@ -126,13 +142,13 @@ try {
     const rec = await page.evaluate(() => { const D = window.getFieldApp()._debug, R = D.nineRecSoon(40, true);
       const at = k => JSON.stringify(Array.from(R.s.frames[Math.floor(k * (R.s.frames.length - 1))]).map(v => isNaN(v) ? null : +v.toFixed(2)));
       return { shots: R.shots, over: R.over, moves: at(0) !== at(1), again: D.nineRecSoon(40) === R, kind: R.S.kind }; });
-    const ok = bp && !bp.none && bp.rack && bp.name === 'Bumper pool' && bp.start === '10,0,16,true'
+    const ok = bp && !bp.none && bp.rack && bp.lays === 'true,true,true' && bp.layShot && bp.name === 'Bumper pool' && bp.start === '10,0,16,true'
       && bp.turns === '1;0/0;0 1;0/1;0 0;0/1;0 0;2/1;0 0;5/1;1' && bp.back && bp.stars === '3,true'
       && bp.post === 'true,true,true' && bp.pot === 'true,1' && bp.pick === 'false,true,17' && bp.plan
       && went && went.shots === 1 && after && !after.anim && after.moves === 1
       && rec.kind === 'bumper' && rec.shots >= 3 && rec.moves && rec.again;
     if (!ok) failures.push('[bumper pool] ' + JSON.stringify({ bp, went, after, rec }));
-    console.log(`${ok ? 'ok  ' : 'FAIL'} bumper pool (five a side, the marked one first; a ball before its marked one brought back, one in its own pocket keeping the turn, one in the wrong pocket brought back, all five a win; off a bumper that stays, between the guards into the pocket; a press picking a ball once the marked one is in; the real Enter shot; a board no one plays shot ${rec.shots} balls${rec.over ? ', to a win' : ''})`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} bumper pool (a table a board, the same turned a half turn, the guards closer and more bumpers farther out; five a side, the marked one first; a ball before its marked one brought back, one in its own pocket keeping the turn, one in the wrong pocket brought back, all five a win; off a bumper that stays, between the guards into the pocket; a press picking a ball once the marked one is in; the real Enter shot; a board no one plays shot ${rec.shots} balls${rec.over ? ', to a win' : ''})`);
   }
 
 

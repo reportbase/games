@@ -56274,7 +56274,7 @@ const TRICK_APP = (() => {
                 planGen: (g, lv) => carPlanGen(g, lv), title: g => carTitle(g), sim: (...a) => simC(...a), brk: false, recShots: () => CAR_REC_SHOTS, bare: true, app: null },
     bowl:     { key: 'bowl', pre: 'w', best: 'bw:', games: new Map(), rack: idx => rackB(idx), cue: B => ({ ang: bwlAim(B), power: 24, elev: 0 }), fresh: () => bwlNew(), see: () => BWL_SEE, finish: (g, s) => bwlFinish(g, s),
                 planGen: (g, lv) => bwlPlanGen(g, lv), title: g => bwlTitle(g), sim: (...a) => simB(...a), brk: false, recShots: () => BWL_REC_SHOTS, bare: true, kitchen: true, ditch: true, app: null },
-    bumper:   { key: 'bumper', pre: 'p', best: 'bp:', games: new Map(), rack: () => rackBp(), cue: B => ({ ang: bpAim(B, 0), power: 16, elev: 0 }), fresh: () => bpNew(), see: () => BP_SEE, finish: (g, s) => bpFinish(g, s),
+    bumper:   { key: 'bumper', pre: 'p', best: 'bp:', games: new Map(), rack: idx => rackBp(idx), cue: B => ({ ang: bpAim(B, 0), power: 16, elev: 0 }), fresh: () => bpNew(), see: () => BP_SEE, finish: (g, s) => bpFinish(g, s),
                 planGen: (g, lv) => bpPlanGen(g, lv), title: g => bpTitle(g), sim: (...a) => simBp(...a), brk: false, recShots: () => BP_REC_SHOTS, bare: true, bumper: true, pick: (g, b) => bpCanPick(g.balls, 0, b), app: null },
   };
   const M = () => { try { const A = window.getFieldApp(); for (const k in MATCH) if (MATCH[k].app === A) return MATCH[k]; } catch {} return null; };
@@ -56867,13 +56867,24 @@ const TRICK_APP = (() => {
   const BWL_PAIRS = [[2, 3], [4, 6], [7, 10], [8, 9], [11, 15], [12, 14]], BWL_MID = [1, 13], BWL_EIGHT = 5;
   // the balls a side is on: its own still out of the ditch, or the 8 once all its own are in
   const bwlOn = (balls, t) => { const own = balls.filter(b => bwlMine(t, b.n) && !b.ditch); return own.length ? own : balls.filter(b => b.n === 8 && !b.ditch); };
-  const bwlPin = (n, spot) => ({ ...ballOf(n, ...BWL_SPOT[spot]), r: BWL_R, spot });
+  /* A RACK A BOARD (Nov 26: "5", of "every board its own game, harder farther out" for bowling and bumper pool): the rack's spacing and its place up
+     the table are the board's own, seeded by its number (`bwlSpots`): from 3.6 to 4.4 of a ball's radius apart, its head spot from 1.4 to 2.4 past
+     the middle (held so the last row stays on the table). Its shape stays fair (each pair of mirrored spots one of each side). How hard a board is
+     farther out is still the computer's hand and sight, by level. `BWL_SPOT` is the spots as they were, kept for what reads them. */
+  const BWL_SPOTS = new Map();
+  function bwlSpots(idx){
+    if (BWL_SPOTS.has(idx)) return BWL_SPOTS.get(idx);
+    const rnd = rng((idx || 0) * 7919 + 77), sp = (3.6 + 0.8 * rnd()) * R, x0 = Math.min(1.4 + rnd(), LX / 2 - 0.9 - 4 * sp * 0.866), S = {};
+    BWL_ROWS.forEach((ns, row) => ns.forEach((n, j) => { S[n] = [x0 + row * sp * 0.866, (j - (ns.length - 1) / 2) * sp]; }));
+    BWL_SPOTS.set(idx, S); return S;
+  }
+  const bwlPin = (n, spot, S = BWL_SPOT) => ({ ...ballOf(n, ...S[spot]), r: BWL_R, spot });
   const bwlWhite = (x, z, ditch) => ({ ...ballOf(0, x, z), r: BWL_R, ditch: !!ditch });
   function rackB(idx){
     const rnd = rng((idx || 0) * 7919 + 31), mix = a => { for (let i = a.length - 1; i > 0; i--){ const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
-    const sol = mix(BWL_GRP[0].slice()), str = mix(BWL_GRP[1].slice()), B = [bwlWhite(...HEAD)];
-    for (const pr of [...BWL_PAIRS, BWL_MID]){ const f = rnd() < 0.5; B.push(bwlPin(sol.pop(), pr[f ? 0 : 1]), bwlPin(str.pop(), pr[f ? 1 : 0])); }
-    B.push(bwlPin(8, BWL_EIGHT));
+    const sol = mix(BWL_GRP[0].slice()), str = mix(BWL_GRP[1].slice()), B = [bwlWhite(...HEAD)], S = bwlSpots(idx);
+    for (const pr of [...BWL_PAIRS, BWL_MID]){ const f = rnd() < 0.5; B.push(bwlPin(sol.pop(), pr[f ? 0 : 1], S), bwlPin(str.pop(), pr[f ? 1 : 0], S)); }
+    B.push(bwlPin(8, BWL_EIGHT, S));
     return B;
   }
   // how many of each side's balls are in the ditch
@@ -56958,16 +56969,39 @@ const TRICK_APP = (() => {
   const BP_X = 8.2, BP_BR = 0.32, BP_POCK = [[-BP_X, 0], [BP_X, 0]];
   const BP_POSTS = [[-(BP_X - 1.25), -1], [-(BP_X - 1.25), 1], [BP_X - 1.25, -1], [BP_X - 1.25, 1], [0, -1.5], [0, 1.5], [-1.5, 0], [1.5, 0]];
   const BP_GRP = [[16, 17, 18, 19, 20], [21, 22, 23, 24, 25]], BP_MARK = [16, 21], bpOwner = n => n <= 20 ? 0 : 1, bpPocketOf = o => o === 0 ? 1 : 0;
+  /* A TABLE A BOARD (Nov 26: "5", of "every board its own game, harder farther out"): the bumpers are the board's own (`bpLayout`, seeded by its
+     number, kept): the middle one of four patterns (a diamond, a square, a line across, staggered), the guards closer about each pocket the farther
+     out (their half-gap from 1.15 at level 1 to 0.85 at level 5, a ball 0.9 across), and from level 3 a pair of bumpers more out on the table, from
+     level 5 two pairs, each clear of the pockets, the starting places and the other bumpers. Every table is the same turned a half turn about its
+     middle, so the two sides always play the same table. Every ball carries its board's number (`lay`), so the shot, the drawing, the minimap and a
+     ball put back all read the board's bumpers (`bpPostsOf`). */
+  const BP_LAYS = new Map();
+  function bpLayout(idx){
+    if (BP_LAYS.has(idx)) return BP_LAYS.get(idx);
+    const lv = levelAt(idx || 0), rnd = rng((idx || 0) * 7919 + 91), gw = 1.15 - 0.075 * (lv - 1), gx = BP_X - 1.25;
+    const mids = [[[0, -1.5], [0, 1.5], [-1.5, 0], [1.5, 0]], [[1.1, 1.1], [-1.1, -1.1], [1.1, -1.1], [-1.1, 1.1]], [[0, 1], [0, -1], [0, 2.6], [0, -2.6]],
+                  [[1.2, 0.9], [-1.2, -0.9], [-1.2, 2.2], [1.2, -2.2]]];
+    const pat = Math.floor(rnd() * mids.length), posts = [[-gx, -gw], [-gx, gw], [gx, -gw], [gx, gw], ...mids[pat]];
+    const starts = Object.values(BP_START), clear = (x, z) => Math.abs(z) <= LZ / 2 - 0.9 && Math.abs(x) <= LX / 2 - 0.9
+      && starts.every(([a, b]) => Math.hypot(a - x, b - z) >= R + BP_BR + 0.5) && BP_POCK.every(([a, b]) => Math.hypot(a - x, b - z) >= POCK + 1.2)
+      && posts.every(([a, b]) => Math.hypot(a - x, b - z) >= 2 * BP_BR + 1.1);
+    for (let k = 0, want = lv >= 5 ? 2 : lv >= 3 ? 1 : 0, got = 0; k < 200 && got < want; k++){
+      const x = (rnd() < 0.5 ? -1 : 1) * (2.4 + rnd() * 3), z = (rnd() * 2 - 1) * 3.4;
+      if (clear(x, z) && clear(-x, -z) && Math.hypot(2 * x, 2 * z) >= 2 * BP_BR + 1.1){ posts.push([x, z], [-x, -z]); got++; }
+    }
+    const L = { posts, pat, gw }; BP_LAYS.set(idx, L); return L;
+  }
+  const bpPostsOf = B => { const b = B && B.find(q => q.lay != null); return b ? bpLayout(b.lay).posts : BP_POSTS; };
   const BP_START = {};
   [[-5.6, 0], [-8.4, -2.4], [-8.4, 2.4], [-6.4, -3.6], [-6.4, 3.6]].forEach(([x, z], k) => { BP_START[16 + k] = [x, z]; BP_START[21 + k] = [-x, -z]; });
   const BP_SEE = [2, 2, 1, 1, 0], BP_ERR = [5, 3, 1.8, 1, 0.5], BP_REC_SHOTS = 40;
   const BP_TRY = [{ balls: 1, angs: 8, pows: [14] }, { balls: 1, angs: 12, pows: [12, 20] }, { balls: 2, angs: 16, pows: [12, 20] },
                   { balls: 2, angs: 24, pows: [10, 16, 24] }, { balls: 3, angs: 32, pows: [10, 16, 24] }];
-  const bpBall = n => ({ ...ballOf(n, ...BP_START[n]), stripe: false, cue: n === 16 });
-  function rackBp(){ return [...BP_GRP[0], ...BP_GRP[1]].map(bpBall); }
+  const bpBall = (n, idx) => ({ ...ballOf(n, ...BP_START[n]), stripe: false, cue: n === 16, lay: idx || 0 });
+  function rackBp(idx){ return [...BP_GRP[0], ...BP_GRP[1]].map(n => bpBall(n, idx)); }
   // a place clear of the balls, the bumpers and the pockets, on the table
   const bpFree = (B, x, z, skip) => Math.abs(x) <= LX / 2 - R && Math.abs(z) <= LZ / 2 - R && B.every(b => b === skip || b.sunk || Math.hypot(b.x - x, b.z - z) >= b.r + R + 0.02)
-    && BP_POSTS.every(([px, pz]) => Math.hypot(px - x, pz - z) >= BP_BR + R + 0.02) && BP_POCK.every(([px, pz]) => Math.hypot(px - x, pz - z) >= POCK + R);
+    && bpPostsOf(B).every(([px, pz]) => Math.hypot(px - x, pz - z) >= BP_BR + R + 0.02) && BP_POCK.every(([px, pz]) => Math.hypot(px - x, pz - z) >= POCK + R);
   function bpRespot(B, b){
     const [x0, z0] = BP_START[b.n]; Object.assign(b, { sunk: false, off: false, y: 0, vx: 0, vz: 0, vy: 0, wx: 0, wy: 0, wz: 0 });
     for (let k = 0; k < 400; k++){ const r = 0.25 * Math.ceil(k / 8), a = k * Math.PI / 4 + Math.ceil(k / 8) * 0.4, x = x0 + r * Math.cos(a), z = z0 + r * Math.sin(a);
@@ -56982,7 +57016,7 @@ const TRICK_APP = (() => {
     const pick = can.find(b => b.n === BP_MARK[t]) || can[0]; g.balls.forEach(b => { b.cue = b === pick; }); g.ang = bpAim(g.balls, t);
   }
   function simBp(B, ang, power, w, vy){
-    const n = B.length, posts = BP_POSTS.map(([x, z], k) => ({ ...ballOf(100 + k, x, z), r: BP_BR, m: 1e9, fixed: true, px: x, pz: z, cue: false }));
+    const n = B.length, posts = bpPostsOf(B).map(([x, z], k) => ({ ...ballOf(100 + k, x, z), r: BP_BR, m: 1e9, fixed: true, px: x, pz: z, cue: false }));
     const P = POCKETS.splice(0, POCKETS.length, ...BP_POCK); let s;
     TRAP = b => { if (b.fixed){ b.x = b.px; b.z = b.pz; b.y = 0; b.vx = b.vz = b.vy = b.wx = b.wy = b.wz = 0; } };
     try { s = simulate([...B, ...posts], ang, power, w, vy); } finally { TRAP = null; POCKETS.splice(0, POCKETS.length, ...P); }
@@ -57496,7 +57530,7 @@ const TRICK_APP = (() => {
     if ((M() || {}).rt) for (const sg of [-1, 1]) out.push({ kind: 'tsBox', u: Ub(sg * (LX / 2 + CUSH_W / 2)), v: Vb(0), scale: Sb(1), sx: CUSH_W * 1.02, sy: CUSH_H * 1.04, sz: HK_GOAL, color: sg < 0 ? 0x2a4fb0 : 0xd23a2f });   // (pool hockey's goals: yours blue, the computer's red)
     if ((M() || {}).bumper){   // (bumper pool: its two pockets, a ring of its side's colour round each, and its bumpers)
       BP_POCK.forEach(([x, z], k) => out.push({ kind: 'tsDot', u: Ub(x), v: Vb(z), scale: Sb(2 * POCK), color: 0x050506 }, { kind: 'tsRing', u: Ub(x), v: Vb(z), scale: Sb(2 * POCK + 0.3), color: k ? 0xc8312b : 0xece4cf }));
-      for (const [x, z] of BP_POSTS) out.push({ kind: 'tsPost', u: Ub(x), v: Vb(z), scale: Sb(1), sx: 2 * BP_BR, sy: CUSH_H * 1.1, sz: 2 * BP_BR, color: 0x1c1c20 });
+      for (const [x, z] of bpPostsOf(V.B)) out.push({ kind: 'tsPost', u: Ub(x), v: Vb(z), scale: Sb(1), sx: 2 * BP_BR, sy: CUSH_H * 1.1, sz: 2 * BP_BR, color: 0x1c1c20 });
     }
     const ch = V.ch;
     if (ch && ch.zone){ const [x, z, r] = ch.zone; out.push({ kind: 'tsZone', u: Ub(x), v: Vb(z), scale: Sb(2 * r), color: GOLD }, { kind: 'tsZoneFill', u: Ub(x), v: Vb(z), scale: Sb(2 * r), color: GOLD }); }
@@ -57818,7 +57852,7 @@ const TRICK_APP = (() => {
     c.strokeStyle = 'rgba(255,255,255,.28)'; c.lineWidth = 2; c.stroke();
     c.fillStyle = hex(CLOTH); c.fillRect(X(-LX / 2), Z(-LZ / 2), LX * k, LZ * k);
     if (m.bumper){ c.fillStyle = '#07090c'; for (const [x, z] of BP_POCK){ c.beginPath(); c.arc(X(x), Z(z), POCK * k * 0.8, 0, 7); c.fill(); }
-      c.fillStyle = '#1c1c20'; for (const [x, z] of BP_POSTS){ c.beginPath(); c.arc(X(x), Z(z), Math.max(2, BP_BR * k), 0, 7); c.fill(); } }
+      c.fillStyle = '#1c1c20'; for (const [x, z] of bpPostsOf(V.B)){ c.beginPath(); c.arc(X(x), Z(z), Math.max(2, BP_BR * k), 0, 7); c.fill(); } }
     if (!m.bare && !m.rt){ c.fillStyle = '#07090c'; for (const [x, z] of POCKETS){ c.beginPath(); c.arc(X(x), Z(z), POCK * k * 0.8, 0, 7); c.fill(); } }
     let w = null;
     V.B.forEach((b, i) => { const q = V.pos ? V.pos[i] : (b.sunk ? null : [b.x, b.z]); if (!q) return; if (b.cue) w = q;
@@ -58324,14 +58358,14 @@ const TRICK_APP = (() => {
     icon(ctx, sz){ TABLE_ICON(ctx, sz, false);
       const d = sz * 0.07; [1, 2, 3, 4].forEach((n, row) => { for (let j = 0; j < n; j++) dot(ctx, sz * 0.6 + row * d * 1.4, sz * 0.5 + (j - (n - 1) / 2) * d * 1.6, d * 0.5, ['#e3c33b', '#2f5fd0', '#d23a2f', '#6b3fa0', '#e0782a', '#2e8b57', '#7a2f2a', '#16161a', '#e3c33b', '#2f5fd0'][row * (row + 1) / 2 + j]); });
       dot(ctx, sz * 0.2, sz * 0.5, d * 0.55, '#f2f0ea'); },
-    debug: { rackB, simB, bwlDown, bwlFinish, bwlPlanGen, bwlAuto, bwlTitle, bwlCleared, BWL_SPOT, BWL_ERR, BWL_SEE, BWL_R, BWL_DW, BWL_GRP, BWL_PAIRS, BWL_MID, BWL_EIGHT } });
+    debug: { rackB, simB, bwlDown, bwlFinish, bwlPlanGen, bwlAuto, bwlTitle, bwlCleared, bwlSpots, BWL_SPOT, BWL_ERR, BWL_SEE, BWL_R, BWL_DW, BWL_GRP, BWL_PAIRS, BWL_MID, BWL_EIGHT } });
   app.bumper = matchApp(MATCH.bumper, { name: 'Bumper pool', hint: 'your reds into the far pocket, the marked one first; the first with all five in wins',
     level: 'How steady the computer\'s hand is, how many shots it tries and how far your own ball is seen ahead; a step harder farther out.', again: 'Start this board again', againTip: 'The ten balls on their places, your shot.',
     icon(ctx, sz){ TABLE_ICON(ctx, sz, false);
       ctx.fillStyle = '#07090c'; for (const x of [0.18, 0.82]){ ctx.beginPath(); ctx.arc(sz * x, sz * 0.5, sz * 0.05, 0, 7); ctx.fill(); }
       ctx.fillStyle = '#1c1c20'; for (const [x, y] of [[0.5, 0.4], [0.5, 0.6], [0.42, 0.5], [0.58, 0.5]]){ ctx.beginPath(); ctx.arc(sz * x, sz * y, sz * 0.025, 0, 7); ctx.fill(); }
       for (const [x, y, c] of [[0.3, 0.38, '#c8312b'], [0.3, 0.62, '#c8312b'], [0.7, 0.38, '#ece4cf'], [0.7, 0.62, '#ece4cf']]) dot(ctx, x * sz, y * sz, sz * 0.045, c); },
-    debug: { rackBp, simBp, bpJudge, bpFinish, bpPlanGen, bpAuto, bpTitle, bpIn, bpCanPick, bpSetCue, pickAt, uvOf: (x, z) => [(x + BW / 2) / BW, (z + BH / 2) / BH], BP_POCK, BP_POSTS, BP_START, BP_GRP, BP_MARK } });
+    debug: { rackBp, simBp, bpJudge, bpFinish, bpPlanGen, bpAuto, bpTitle, bpIn, bpCanPick, bpSetCue, pickAt, bpLayout, bpPostsOf, uvOf: (x, z) => [(x + BW / 2) / BW, (z + BH / 2) / BH], BP_POCK, BP_POSTS, BP_START, BP_GRP, BP_MARK } });
   return app;
 })();
 const NINEBALL_APP = TRICK_APP.nine;   // (9-ball against the computer, on trick shots' engine and table, Nov 22)
