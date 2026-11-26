@@ -56924,7 +56924,7 @@ const TRICK_APP = (() => {
       for (const a of aims) for (const pw of T.pows) for (const tip of T.tips){
         let got = 0, k = 0;
         for (const da of [0, -e, e]){ const st = strikeOf(a + da, tip[0], tip[1], pw, MU_TIP, 0), sm = simB(g.balls, st.dir, st.speed, st.w, st.vy); yield;
-          if (!sm) continue; const d = bwlDown(g.balls, sm); got += (d.eight ? (bwlCleared(sm.final)[t] === BWL_N ? 10 : -10) : 0) + d.cleared[t].length - 0.6 * d.cleared[1 - t].length - (d.whiteOff ? 1.5 : 0);   // (a scratch ends the turn and gives the white in hand: Nov 26) k++; }
+          if (!sm) continue; const d = bwlDown(g.balls, sm); got += (d.eight ? (bwlCleared(sm.final)[t] === BWL_N ? 10 : -10) : 0) + d.cleared[t].length - 0.6 * d.cleared[1 - t].length - (d.whiteOff ? 1.5 : 0); k++; }   // (the white in the gutter a scratch: the turn passes, Nov 26)
         if (!k) continue; const score = got / k;
         if (!best || score > best.score) best = { a, p: pw, tip, score };
       }

@@ -1512,3 +1512,13 @@ stands as the record. `CURLING_APP` is now `TRICK_APP.curl`, an entry of `MATCH`
 - Part 7: the old curling checks (the sheet, its row-shut drag and pad, from behind the stone, its pull bar) are taken out; a new check covers the
   hack, an end's score, four ends to a win (3 stars), a lone stone to the button, the curl both ways, a takeout, the hog line, the computer's
   stone, the real Enter and a board no one plays. Looked at in screenshots: the house round, the stones, the view behind the stone.
+
+**Bowling: a scratch; Replay always in the menu** (Nov 26: "Back to the bowling game. We're is the replay menu item ?    If the cue ball goes in
+the gutter, it is a scratch.").
+- Replay was in the menu only once a shot had been played and while nothing ran, so it was easy to miss. It is now always in every pool match
+  game's menu outside a replay, greyed (`disabled` as a getter, read when the menu is built) while there is nothing to play again.
+- A scratch (`bwlFinish`): the white in the gutter ends the turn whatever the ball cleared (that stays cleared), and the other side has the white in
+  hand on the head string (the nearest free place to the head spot along it). The 8 in on a scratch loses. The planner counts a scratch 1.5 against
+  a shot. The white is no longer played from the ditch (the code for it in `simB` stays and is no longer reached).
+- Part 7's bowling check adds a scratch passing the turn with the white in hand and the 8 on a scratch losing; passing. Part 5's replay check
+  passing. A probe: Replay greyed before the first shot, live after it.
