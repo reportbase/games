@@ -51405,7 +51405,7 @@ const LIGHTS_APP = (() => {
    (Nov 26: "How about a simple block building game", then "Build to a model", of four kinds offered.) A plot of squares on the left of
    the board and, on the right, a small model built of coloured blocks: build the model on the plot, block for block.
    - A TAP on a square of the plot sets a block of the chosen colour on top of that square's stack; with the remove tool a tap takes the
-     top block off. The colours and the remove tool are the play pad's (`playActs`), the chosen one ringed. Blocks only stack: a stack is
+     top block off. The colours and the remove tool are tiles in the bottom row (`statTiles`; the play pad's until Nov 26), the chosen one lit. Blocks only stack: a stack is
      a column of colours from the ground up, so a model is a stack a square.
    - EVERY BOARD ITS OWN MODEL (`modelOf`, seeded by the board's number), harder farther out (`LV`, by level 1–5, the ring level plus the
      Difficulty as every game with levels has): a bigger plot, taller stacks, more colours and more blocks. A model is one piece (every
@@ -51426,6 +51426,7 @@ const BLOCKS_APP = (() => {
   ];
   // the plot on the board's left (P0..P1 across and down), the model on its right, smaller
   const PLAIN = { n: 1, colors: [0x1b1e25] };
+  const ON = '#2f4a3a';   // (a row tile chosen, as the marble run's)
   const P0 = 0.05, P1 = 0.69, M0 = 0.74, M1 = 0.97, STEP = 0.45, HOLD0 = 0.8, HOLD1 = 2.2;
   const DL = ARCADE.difficulty('blocks.level', 'Every board has its own model, harder the farther it is from the corner: a 4×4 plot with two colours and stacks two high near it, out to a 7×7 plot with four colours, stacks five high and thirty blocks.', true);
   const SND = ARCADE.sounds('blocks.sound', 'A knock for each block set, a scrape for each taken off, a fanfare when the model is built.');
@@ -51548,11 +51549,13 @@ const BLOCKS_APP = (() => {
       return true;
     },
     onCellHold(c, r){ GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; try { fieldItemsChanged(); } catch {} return true; },
-    // the play pad: a colour a button (the level's), and the remove tool; the chosen one ringed
-    playActs(c, r){ const g = liveGame(); if (!g || g.done || !LIVE || LIVE.c !== c || LIVE.r !== r) return null;
-      const L = []; for (let k = 0; k < g.S.D.cols; k++) L.push({ key: 'c' + k, glyph: COL_GLYPH[k], title: 'Set ' + COL_NAME[k] + ' blocks', on: g.tool === k });
-      L.push({ key: 'x', glyph: '⌫', title: 'Take the top block off a square', on: g.tool < 0 }); return L; },
-    onPlayAct(c, r, key){ const g = liveGame(); if (!g) return false; g.tool = key === 'x' ? -1 : +key.slice(1); try { fieldItemsChanged(); } catch {} return true; },
+    /* THE COLOURS IN THE BOTTOM ROW (Nov 26: "Put the block color options on the bottom object  browser"): a tile a colour (the level's) and the
+       remove tool's, the chosen one lit (`statTiles`, `onStatTap`); until then they were the play pad's buttons. The row opens by its dots. */
+    statTiles(c, r){ const g = GAMES.get(gkey(c, r)); if (!g || g.done || !LIVE || LIVE.c !== c || LIVE.r !== r) return null;
+      const L = []; for (let k = 0; k < g.S.D.cols; k++) L.push({ glyph: COL_GLYPH[k], value: COL_NAME[k][0].toUpperCase() + COL_NAME[k].slice(1), label: 'set ' + COL_NAME[k] + ' blocks', bg: g.tool === k ? ON : undefined });
+      L.push({ glyph: '⌫', value: 'Remove', label: 'the top block', bg: g.tool < 0 ? ON : undefined }); return L; },
+    onStatTap(c, r, i){ const f = c == null ? framedCell() : { c, r }; if (!f) return false; const g = gameAt(f.c, f.r); LIVE = { c: f.c, r: f.r };
+      g.tool = i < g.S.D.cols ? i : -1; try { fieldItemsChanged(); bbRefreshNow(); } catch {} return true; },
     drawIcon(ctx, sz){
       ctx.fillStyle = '#15171d'; ctx.fillRect(0, 0, sz, sz);
       const b = sz * 0.16, cube = (x, y, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, b * 0.92, b * 0.92); };

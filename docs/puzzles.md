@@ -699,3 +699,9 @@ building, a stacking tower, a bridge). `BLOCKS_APP`, id `blocks`, after Lights O
   off); a board no one plays building. Looked at in a screenshot.
 - Not done: a tap is read on the ground, so with the board tilted a tap on the top of a tall stack can land on the square behind it; free building
   apart from the model; undo.
+
+**Block builder: the colours in the bottom row** (Nov 26: "Put the block color options on the bottom object  browser"). The colours and Remove are
+the row's tiles now (`statTiles`, `onStatTap`: Red, Blue, … and ⌫ Remove, the chosen one lit), not the play pad's; the pad has none for this game.
+The row opens by its dots as ever (the field's rule that games play with the row shut gives way here, as asked). Part 7's check reads the row's
+tiles, the chosen one lit and none on the pad, chooses Blue and Remove from the row, and sets and takes off a block with real clicks; passing.
+Looked at with the row open.
