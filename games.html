@@ -57819,13 +57819,13 @@ const TRICK_APP = (() => {
      table without them), every ball where it is drawn this frame in its own colour (a stripe a white ring), and the shot's line from the white
      while it is your shot. Drawn from the view the board itself is drawn from (`mapDraw(g, V)`), so a shot running runs on it too. It takes no
      touches (what is under it is still the table's) and is away with the bottom row open, as the whole-table button is. */
-  const MAP = { el: null, seen: 0, sig: '' }, MAP_W = 150;
+  const MAP = { el: null, seen: 0, sig: '' }, MAP_W = 150, MAP_BG = 0.45;
   function mapEnsure(){
     if (MAP.el || typeof document === 'undefined') return MAP.el;
     // (the canvas in a box of its own: the page's `body > canvas` rule would put a canvas of the body's in the top left)
     // (square since Nov 25, the table drawn in it turned as the board lies on the screen: TURNED AS THE BOARD, below)
     const el = document.createElement('div'), cv = document.createElement('canvas'); el.id = 'tsMap'; cv.width = MAP_W * 2; cv.height = MAP_W * 2;
-    el.style.cssText = 'position:fixed;right:16px;bottom:16px;width:' + MAP_W + 'px;height:' + MAP_W + 'px;z-index:29;display:none;pointer-events:none;opacity:.55';   // (see-through, Nov 25: "make the mimap transparent")
+    el.style.cssText = 'position:fixed;right:16px;bottom:16px;width:' + MAP_W + 'px;height:' + MAP_W + 'px;z-index:29;display:none;pointer-events:none';   // (see-through, Nov 25: "make the mimap transparent"; since Nov 26 the table alone: MAP_BG below)
     cv.style.cssText = 'display:block;width:100%;height:100%';
     el.appendChild(cv); document.body.appendChild(el); MAP.el = el; MAP.cv = cv;
     setInterval(() => { if (MAP.el.style.display !== 'none' && performance.now() - MAP.seen > CTL_GONE) mapHide(); }, 200);
@@ -57848,9 +57848,10 @@ const TRICK_APP = (() => {
     if (sig === MAP.sig) return; MAP.sig = sig;
     const c = MAP.cv.getContext('2d'), Wd = MAP.cv.width, k = Wd * 0.97 / BW, X = x => x * k, Z = z => z * k, hex = n => '#' + n.toString(16).padStart(6, '0');
     c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, Wd, Wd); c.translate(Wd / 2, Wd / 2); c.rotate(rot); if (mir) c.scale(1, -1);
-    c.fillStyle = hex(WOOD2); c.beginPath(); c.roundRect ? c.roundRect(X(-BW / 2), Z(-BH / 2), BW * k, BH * k, 10) : c.rect(X(-BW / 2), Z(-BH / 2), BW * k, BH * k); c.fill();
+    // (Nov 26: "Only the minimap background should be transparent": the frame and the cloth at MAP_BG, the pockets, bumpers, balls and aim whole)
+    c.globalAlpha = MAP_BG; c.fillStyle = hex(WOOD2); c.beginPath(); c.roundRect ? c.roundRect(X(-BW / 2), Z(-BH / 2), BW * k, BH * k, 10) : c.rect(X(-BW / 2), Z(-BH / 2), BW * k, BH * k); c.fill();
     c.strokeStyle = 'rgba(255,255,255,.28)'; c.lineWidth = 2; c.stroke();
-    c.fillStyle = hex(CLOTH); c.fillRect(X(-LX / 2), Z(-LZ / 2), LX * k, LZ * k);
+    c.fillStyle = hex(CLOTH); c.fillRect(X(-LX / 2), Z(-LZ / 2), LX * k, LZ * k); c.globalAlpha = 1;
     if (m.bumper){ c.fillStyle = '#07090c'; for (const [x, z] of BP_POCK){ c.beginPath(); c.arc(X(x), Z(z), POCK * k * 0.8, 0, 7); c.fill(); }
       c.fillStyle = '#1c1c20'; for (const [x, z] of bpPostsOf(V.B)){ c.beginPath(); c.arc(X(x), Z(z), Math.max(2, BP_BR * k), 0, 7); c.fill(); } }
     if (!m.bare && !m.rt){ c.fillStyle = '#07090c'; for (const [x, z] of POCKETS){ c.beginPath(); c.arc(X(x), Z(z), POCK * k * 0.8, 0, 7); c.fill(); } }
