@@ -628,3 +628,12 @@ stands above the row, as before. It is as wide as its buttons up to the screen l
 alone it wrapped at half the screen), and past that it wraps onto more lines, growing upward. A game with both the row's dots and the bar would
 have the bar over the dots; none has both yet (the block builder has no dots). Part 7: the bar within 12px of the bottom with the row shut, and
 on a screen 150px wide on more than one line, inside the screen, at the bottom; passing. Looked at in a screenshot.
+
+**The tool bar is the games toolbar's ring** (Nov 26: "It should still use the fisheye wrap around.  Air raid should use this to."). The strip
+of its own is gone (`#toolBar` and its styles): `toolBarTick` puts the game's tool icons into `#gameBar` as chips (`.panel.chip.tchip`, an icon
+each, no words, `aria-pressed` gold for `on`, `.dim` faded), the ring Air raid's weapon chips have always stood in, and asks it to lay out
+again (`__gameRing.layout()`). So both games share one bar at the foot of the screen: an even row while the chips fit, the wrap-around fisheye
+that turns by a drag or the wheel when they do not. `toolBarTick` touches only its own `.tchip`s (it rebuilds them when their count changes,
+else only their faces), so Air raid's static chips are left as they are; Air raid still shows its own (it has no `toolTiles`). Part 7's block
+builder check reads and clicks `#gameBar > .tchip` for real: four chips on one row at the bottom, no words, the chosen one pressed, and on a
+screen 150px wide the ring in fisheye (the strip taking the drag, fewer chips shown, one row, inside the screen); passing.
