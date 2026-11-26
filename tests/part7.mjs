@@ -122,7 +122,8 @@ try {
       const b17 = (() => { const h2 = fresh(); h2.balls.find(b => b.n === 17).x += 1; play(h2, [[17, 1]]); const b = h2.balls.find(q => q.n === 17); return !b.sunk && b.x === D.BP_START[17][0] && b.z === D.BP_START[17][1]; })();
       out.back = b17; out.stars = [h.nine.stars, /you won/.test(D.bpTitle(h))].join();
       // in shots: off a bumper, the bumper still; between the guards into the pocket
-      { const red = (x, z) => ({ ...D.rackBp()[0], x, z, cue: true }), s1 = D.simBp([red(-3, 0)], 0, 10, [0, 0, 0], 0), f1 = s1.final[0];
+      { let di = 0; while (D.bpLayout(di).pat !== 0) di += 37;   // (a board whose middle is the diamond: a bumper at (-1.5, 0))
+        const red = (x, z) => ({ ...D.rackBp(di)[0], x, z, cue: true }), s1 = D.simBp([red(-3, 0)], 0, 10, [0, 0, 0], 0), f1 = s1.final[0];
         out.post = [f1.x < -1.5 - 0.6, s1.cushions.length > 0, s1.frames[0].length === 2].join();
         const s2 = D.simBp([red(6.0, 0)], 0, 6, [0, 0, 0], 0); out.pot = [s2.final[0].sunk, s2.sunk.length && s2.sunk[0].pocket].join(); }
       // picking: only the marked one until it is in, then any of yours

@@ -1527,3 +1527,15 @@ the gutter, it is a scratch.").
 `CURLING_APP`, its stones' textures 26–33, the house's `tsDisc`, its drawing on the table and the minimap) is gone, as are its id `curling` and its
 part 7 check; the notes above stand as the record. Bumper pool was already made (Nov 25, `BUMPER_APP`, id `bumperpool`), so nothing new was
 made for the second half: it stands beside bowling in the list where curling stood before it.
+
+**A table a board** (Nov 26: "5", of the next steps offered: every board its own game, harder farther out, for bumper pool and bowling).
+- Bumper pool (`bpLayout`, kept by board): the middle one of four patterns (a diamond, a square, a line across, staggered), chosen by the board's
+  seed; the guards about each pocket closer the farther out (half-gap 1.15 at level 1 to 0.85 at level 5; a ball is 0.9 across); a pair of
+  bumpers more from level 3, two pairs at level 5, each clear of the pockets (1.2 past the mouth), the starting places and the other bumpers. Every
+  table is the same turned a half turn about its middle, so both sides play the same table. Every ball carries its board's number (`lay`), and the
+  shot, the drawing, the minimap and a ball put back read that board's bumpers (`bpPostsOf`).
+- Bowling (`bwlSpots`, kept by board): the rack's spacing (3.6 to 4.4 of a ball's radius) and its place (the head spot 1.4 to 2.4 past the middle)
+  seeded by the board, the last row held on the table; the rack stays fair. How much harder farther out is the computer's, by level, as before.
+- Part 7: bowling's racks differ across five boards and all stay on the table; bumper pool's layouts over 60 boards are all half-turn symmetric
+  and clear, at least three patterns, fewer bumpers and wider guards near than far, and the shot reading a far board's own bumpers. The "off a
+  bumper" shot is now played on a board whose middle is the diamond.
