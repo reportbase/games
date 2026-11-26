@@ -51401,6 +51401,168 @@ const LIGHTS_APP = (() => {
   };
   return app;
 })();
+/* ═══ BLOCK BUILDER ══════════════════════════════════════════════════════════════════════════════
+   (Nov 26: "How about a simple block building game", then "Build to a model", of four kinds offered.) A plot of squares on the left of
+   the board and, on the right, a small model built of coloured blocks: build the model on the plot, block for block.
+   - A TAP on a square of the plot sets a block of the chosen colour on top of that square's stack; with the remove tool a tap takes the
+     top block off. The colours and the remove tool are the play pad's (`playActs`), the chosen one ringed. Blocks only stack: a stack is
+     a column of colours from the ground up, so a model is a stack a square.
+   - EVERY BOARD ITS OWN MODEL (`modelOf`, seeded by the board's number), harder farther out (`LV`, by level 1–5, the ring level plus the
+     Difficulty as every game with levels has): a bigger plot, taller stacks, more colours and more blocks. A model is one piece (every
+     stack beside another), grown a block at a time from one square.
+   - DONE when every stack on the plot is the model's, colour for colour. Par is the model's count of blocks (each placed once, none taken
+     off); stars by your moves (a block set or taken off is a move): at par 3, within half again 2, else 1. The fewest kept a board.
+   - A BOARD NO ONE PLAYS builds its own model a block at a time, bottom layer first, holds it, and starts again, each at its own phase.
+   - A tap on a board built plays it again; a hold, or the menu's Start this board again, clears its plot. */
+const BLOCKS_APP = (() => {
+  const BASE = 0x15171d, TILE_A = 0x2a2e37, TILE_B = 0x323743, STAND = 0x1e2129, RING = 0xe8c86a;
+  const COLS = [0xd23a2f, 0x2f6fc0, 0xe3c33b, 0x2e9b57], COL_NAME = ['red', 'blue', 'yellow', 'green'], COL_GLYPH = ['🟥', '🟦', '🟨', '🟩'];
+  const LV = [
+    { n: 4, h: 2, cols: 2, lo: 5,  hi: 8 },
+    { n: 5, h: 3, cols: 2, lo: 8,  hi: 12 },
+    { n: 5, h: 3, cols: 3, lo: 12, hi: 16 },
+    { n: 6, h: 4, cols: 3, lo: 16, hi: 22 },
+    { n: 7, h: 5, cols: 4, lo: 22, hi: 30 },
+  ];
+  // the plot on the board's left (P0..P1 across and down), the model on its right, smaller
+  const PLAIN = { n: 1, colors: [0x1b1e25] };
+  const P0 = 0.05, P1 = 0.69, M0 = 0.74, M1 = 0.97, STEP = 0.45, HOLD0 = 0.8, HOLD1 = 2.2;
+  const DL = ARCADE.difficulty('blocks.level', 'Every board has its own model, harder the farther it is from the corner: a 4×4 plot with two colours and stacks two high near it, out to a 7×7 plot with four colours, stacks five high and thirty blocks.', true);
+  const SND = ARCADE.sounds('blocks.sound', 'A knock for each block set, a scrape for each taken off, a fanfare when the model is built.');
+  const say = BOARD_KIT.say(3000);
+  const clock = () => performance.now() / 1000;
+  const gkey = BOARD_KIT.gkey, boardIdx = BOARD_KIT.boardIdx, levelAt = idx => BOARD_KIT.levelAt(idx, DL), rngOf = BOARD_KIT.rng;
+
+  /* A BOARD'S MODEL: grown a block at a time from the middle of the plot: a block goes on a stack already begun (if it is not yet full
+     height) or starts a stack beside one, until the level's count (drawn from its band) is reached; each block a colour drawn from the
+     level's colours. Stacks are kept as arrays of colours, bottom first. Also the order a board no one plays builds it: layer by layer. */
+  const MODELS = new Map();
+  function modelOf(c, r){
+    const idx = boardIdx(c, r), lv = levelAt(idx), key = idx * 8 + lv;
+    let S = MODELS.get(key); if (S) return S;
+    const D = LV[lv - 1], n = D.n, R = rngOf((idx * 2654435761) ^ (lv * 40503) ^ 0xb10c), want = D.lo + Math.floor(R() * (D.hi - D.lo + 1));
+    const st = Array.from({ length: n * n }, () => []), mid = ((n / 2) | 0) * n + ((n / 2) | 0);
+    const near = i => { const x = i % n, y = (i / n) | 0, o = []; if (x > 0) o.push(i - 1); if (x < n - 1) o.push(i + 1); if (y > 0) o.push(i - n); if (y < n - 1) o.push(i + n); return o; };
+    st[mid].push(Math.floor(R() * D.cols)); let k = 1;
+    for (let t = 0; k < want && t < 4000; t++){
+      const used = st.map((s, i) => s.length ? i : -1).filter(i => i >= 0);
+      let i;
+      if (R() < 0.55){ i = used[Math.floor(R() * used.length)]; if (st[i].length >= D.h) continue; }
+      else { const fr = [...new Set(used.flatMap(near))].filter(j => !st[j].length); if (!fr.length) continue; i = fr[Math.floor(R() * fr.length)]; }
+      st[i].push(Math.floor(R() * D.cols)); k++;
+    }
+    const order = []; for (let z = 0; z < D.h; z++) for (let i = 0; i < n * n; i++) if (st[i].length > z) order.push([i, st[i][z]]);
+    S = { idx, lv, D, n, st, par: k, order, phase: BOARD_KIT.phase(idx) };
+    MODELS.set(key, S); if (MODELS.size > 1500) MODELS.delete(MODELS.keys().next().value);
+    return S;
+  }
+
+  /* ─── PLAYING ─── a game: the plot's stacks, the moves so far, the chosen colour (or -1, the remove tool), whether it is built */
+  const GAMES = new Map();
+  let LIVE = null;
+  const { BEST, saveBest } = BOARD_KIT.best('blocks.best');
+  const bestKey = S => S.idx + '@' + S.lv;
+  const fresh = (c, r) => { const S = modelOf(c, r); return { S, c, r, n: S.n, st: Array.from({ length: S.n * S.n }, () => []), moves: 0, tool: 0, done: false, last: -1, lastTo: 0 }; };
+  const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
+  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
+  const starsOf = (moves, par) => moves <= par ? 3 : moves <= Math.ceil(par * 1.5) ? 2 : 1;
+  const sameAs = (a, b) => a.every((s, i) => s.length === b[i].length && s.every((x, z) => x === b[i][z]));
+  const placed = st => st.reduce((k, s) => k + s.length, 0);
+  // (a tap's square on the plot, or -1 off it)
+  const cellAt = (n, u, v) => { if (u < P0 || u > P1 || v < P0 + 0.12 || v > P1 + 0.12) return -1; const x = Math.floor((u - P0) / (P1 - P0) * n), y = Math.floor((v - P0 - 0.12) / (P1 - P0) * n); return x >= 0 && x < n && y >= 0 && y < n ? y * n + x : -1; };
+  function act(g, i, quiet){
+    if (g.done || i < 0 || i >= g.n * g.n) return false;
+    const s = g.st[i];
+    if (g.tool < 0){ if (!s.length) return false; s.pop(); SND.play('slide', quiet); }
+    else { if (s.length >= g.S.D.h) return false; s.push(g.tool); SND.play('tap', quiet); }
+    g.moves++; g.last = i; g.lastTo = clock() + 0.3;
+    if (sameAs(g.st, g.S.st)){
+      g.done = true;
+      const k = bestKey(g.S), was = BEST.get(k);
+      if (was == null || g.moves < was){ BEST.delete(k); BEST.set(k, g.moves); saveBest(); }
+      if (!quiet) SND.play('win');
+    }
+    return true;
+  }
+  // a board no one plays: its model built a block at a time, held, and cleared
+  function shownOf(S){
+    const k = S.order.length, t = BOARD_KIT.loopT(S.phase, HOLD0 + k * STEP + HOLD1), m = t < HOLD0 ? 0 : Math.min(k, Math.floor((t - HOLD0) / STEP) + 1);
+    const st = Array.from({ length: S.n * S.n }, () => []); for (let j = 0; j < m; j++) st[S.order[j][0]].push(S.order[j][1]);
+    return st;
+  }
+  function viewOf(c, r){
+    const here = LIVE && LIVE.c === c && LIVE.r === r && liveGame(), g = here || GAMES.get(gkey(c, r));
+    if (g && (g.moves > 0 || here)) return { S: g.S, st: g.st, last: clock() < g.lastTo ? g.last : -1, done: g.done };
+    const S = modelOf(c, r); return { S, st: shownOf(S), last: -1, done: false };
+  }
+  function itemsOf(V){
+    const S = V.S, n = S.n, out = [], q = (P1 - P0) / n, qm = (M1 - M0) / n;
+    // the plot: a tile a square (a checker), each stack's blocks on it
+    for (let i = 0; i < n * n; i++){
+      const x = i % n, y = (i / n) | 0, u = P0 + (x + 0.5) * q, v = P0 + 0.12 + (y + 0.5) * q;
+      out.push({ kind: 'blkTile', u, v, scale: q, color: (x + y) % 2 ? TILE_B : TILE_A });
+      V.st[i].forEach((col, z) => out.push({ kind: 'blkCube', u, v, lift: (z + 0.5) * q, scale: q, color: COLS[col] }));
+      if (i === V.last) out.push({ kind: 'blkRing', u, v, scale: q, lift: V.st[i].length * q + 0.002, color: RING });
+    }
+    // the model: on a stand to the right, smaller, at the plot's middle height
+    const mv = P0 + 0.12 + (P1 - P0) / 2 - (M1 - M0) / 2;
+    out.push({ kind: 'blkTile', u: (M0 + M1) / 2, v: mv + (M1 - M0) / 2, scale: 1, sx: (M1 - M0) * 1.08, sz: (M1 - M0) * 1.08, color: STAND });
+    S.st.forEach((s, i) => { const u = M0 + ((i % n) + 0.5) * qm, v = mv + (((i / n) | 0) + 0.5) * qm; s.forEach((col, z) => out.push({ kind: 'blkCube', u, v, lift: (z + 0.5) * qm + 0.004, scale: qm, color: COLS[col] })); });
+    if (V.done) out.push({ kind: 'blkRing', u: (M0 + M1) / 2, v: mv + (M1 - M0) / 2, scale: (M1 - M0) * 1.2, lift: 0.003, color: RING });
+    return out;
+  }
+
+  const app = {
+    name: 'Block builder',
+    menu: [{ head: 'Block builder', items: [
+      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); MODELS.clear(); try { fieldItemsChanged(); } catch {} } },
+      SND.item,
+      { label: 'Start this board again', title: 'This board\'s plot cleared, no moves yet.', on(){ const f = framedCell(); if (f){ GAMES.set(gkey(f.c, f.r), fresh(f.c, f.r)); LIVE = { c: f.c, r: f.r }; try { fieldItemsChanged(); } catch {} } } },
+    ]}],
+    cellFar: { light: TILE_B, dark: BASE },
+    itemMinPx: 10,
+    itemGeometries: {
+      blkCube: T => new T.BoxGeometry(0.94, 0.94, 0.94),
+      blkTile: T => { const g = new T.BoxGeometry(0.96, 0.02, 0.96); g.translate(0, 0.01, 0); return g; },
+      blkRing: T => { const g = FieldKit.ring(T, 0.44, 0.5, 0.02, 40); g.userData.unlit = true; return g; },
+    },
+    cellGrid(){ return PLAIN; },   // (one colour under the plot and the model: the field's own checker would be read as squares to build on)
+    cellItems(c, r){ return itemsOf(viewOf(c, r)); },
+    cellTitle(c, r){
+      const idx = boardIdx(c, r), lv = levelAt(idx), S = modelOf(c, r), g = GAMES.get(gkey(c, r)), best = BEST.get(bestKey(S));
+      return 'Block builder — level ' + lv + ', ' + S.n + '×' + S.n + ', ' + S.par + ' blocks, par ' + S.par + (best != null ? ' · best ' + best + ' ' + BOARD_KIT.stars(starsOf(best, S.par)) : '')
+        + (g && (g.moves || g.done) ? ' · ' + (g.done ? 'built in ' + g.moves + ' moves ' + BOARD_KIT.stars(starsOf(g.moves, S.par)) + ', tap to build it again'
+             : g.moves + (g.moves === 1 ? ' move, ' : ' moves, ') + placed(g.st) + ' of ' + S.par + ' blocks set') : ' · tap a square to set a block, build the model on the right')
+        + (g && !g.done ? ' · ' + (g.tool < 0 ? 'taking off' : 'setting ' + COL_NAME[g.tool]) : '');
+    },
+    onReset(c, r){ GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; return true; },
+    onSelect(c, r){ return true; },
+    onFramed(c, r){ LIVE = c == null ? null : { c, r }; },
+    noDoubleTap(){ const g = liveGame(); return !!g && !g.done; },
+    onCellTap(c, r, u, v){
+      LIVE = { c, r };
+      const g = gameAt(c, r);
+      if (g.done){ app.onReset(c, r); return true; }
+      if (u == null) return true;
+      act(g, cellAt(g.n, u, v));
+      return true;
+    },
+    onCellHold(c, r){ GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; try { fieldItemsChanged(); } catch {} return true; },
+    // the play pad: a colour a button (the level's), and the remove tool; the chosen one ringed
+    playActs(c, r){ const g = liveGame(); if (!g || g.done || !LIVE || LIVE.c !== c || LIVE.r !== r) return null;
+      const L = []; for (let k = 0; k < g.S.D.cols; k++) L.push({ key: 'c' + k, glyph: COL_GLYPH[k], title: 'Set ' + COL_NAME[k] + ' blocks', on: g.tool === k });
+      L.push({ key: 'x', glyph: '⌫', title: 'Take the top block off a square', on: g.tool < 0 }); return L; },
+    onPlayAct(c, r, key){ const g = liveGame(); if (!g) return false; g.tool = key === 'x' ? -1 : +key.slice(1); try { fieldItemsChanged(); } catch {} return true; },
+    drawIcon(ctx, sz){
+      ctx.fillStyle = '#15171d'; ctx.fillRect(0, 0, sz, sz);
+      const b = sz * 0.16, cube = (x, y, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, b * 0.92, b * 0.92); };
+      [[0.18, 0.62, '#d23a2f'], [0.34, 0.62, '#2f6fc0'], [0.34, 0.46, '#e3c33b'], [0.5, 0.62, '#d23a2f'], [0.66, 0.62, '#2e9b57'], [0.66, 0.46, '#2f6fc0'], [0.66, 0.3, '#d23a2f']].forEach(([x, y, c]) => cube(x * sz, y * sz, c));
+    },
+    _debug: { modelOf, gameAt, fresh, act, shownOf, starsOf, cellAt, sameAs, levelAt, boardIdx, LV, GAMES, BEST, MODELS, P0, P1,
+              levelOf: (c, r) => levelAt(boardIdx(c, r)), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
+  };
+  return app;
+})();
 /* ═══ WHACK-A-MOLE ═════════════════════════════════════════════════════════════════════════════════════════════════════
    (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole".) The fairground game: a
    grid of holes, moles pop up out of them for a moment and duck back, and you bonk as many as you can before the round's
@@ -65109,7 +65271,7 @@ const WAR_APP = (() => {
   };
   return app;
 })();
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, BOWLING_APP, BUMPER_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, WAR_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, NINEBALL_APP, EIGHTBALL_APP, STRAIGHT_APP, ONEPOCKET_APP, BANKPOOL_APP, CAROM_APP, POOLHOCKEY_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, BOWLING_APP, BUMPER_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, BLOCKS_APP, MOLE_APP, WAR_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, NINEBALL_APP, EIGHTBALL_APP, STRAIGHT_APP, ONEPOCKET_APP, BANKPOOL_APP, CAROM_APP, POOLHOCKEY_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -65118,7 +65280,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [BLOCKOUT_APP, 'blockout'], [SOMA_APP, 'soma'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [BOWLING_APP, 'bowling'], [BUMPER_APP, 'bumperpool'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [WAR_APP, 'boardwar'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [NINEBALL_APP, 'nineball'], [EIGHTBALL_APP, 'eightball'], [STRAIGHT_APP, 'straightpool'], [ONEPOCKET_APP, 'onepocket'], [BANKPOOL_APP, 'bankpool'], [CAROM_APP, 'threecushion'], [POOLHOCKEY_APP, 'poolhockey'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [BOWLING_APP, 'bowling'], [BUMPER_APP, 'bumperpool'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [BLOCKS_APP, 'blocks'], [MOLE_APP, 'whackamole'], [WAR_APP, 'boardwar'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [NINEBALL_APP, 'nineball'], [EIGHTBALL_APP, 'eightball'], [STRAIGHT_APP, 'straightpool'], [ONEPOCKET_APP, 'onepocket'], [BANKPOOL_APP, 'bankpool'], [CAROM_APP, 'threecushion'], [POOLHOCKEY_APP, 'poolhockey'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],
@@ -65130,7 +65292,7 @@ SHARE.install(CHESS_APP, (c, r, P) => chessTakeSetup(P));   // (chess's own shar
    `handleGroundTap`). Each reads its own board's game by `_debug.GAMES`, the state its own tap tests before `onReset`. */
 {
   const DONE = { blockout: g => g.state === 'done', soma: g => g.state === 'done', bejeweled: g => g.state === 'won', sokoban: g => !!g.solved,
-    tiltmaze: g => g.state === 'done', pinball: g => g.state === 'over', simon: g => g.state === 'over', lightsout: g => !!g.done,
+    tiltmaze: g => g.state === 'done', pinball: g => g.state === 'over', simon: g => g.state === 'over', lightsout: g => !!g.done, blocks: g => !!g.done,
     whackamole: g => g.state === 'over', nonograms: g => g.state === 'solved', tanks: g => g.state === 'over', pong: g => g.state === 'over',
     airhockey: g => g.state === 'over', squash: g => g.state === 'over', bowling: g => !!(g.nine && g.nine.over), bumperpool: g => !!(g.nine && g.nine.over),
     marblerun: g => g.state === 'won', trickshots: g => !!(g.ch && g.solvedIn) };

@@ -683,3 +683,19 @@ Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood
   - **Eight Queens** (`queens.mine`): this game is the classic eight queens, no regions, so a puzzle is clue queens (`GIVEN`,
     drawn white, a tap on one says it stays) and the rest to find. No clue may attack another; `waysOf` counts the ways to
     place the rest, and Done wants exactly one (else it says how many and asks for another clue).
+
+**Block builder** (Nov 26: "How about a simple block building game", then "Build to a model", of four kinds offered: build to a model, free
+building, a stacking tower, a bridge). `BLOCKS_APP`, id `blocks`, after Lights Out; the rules in the comment over it.
+- The board is a plot of squares on its left (`P0`..`P1` across, a little lower down) and the model on a stand to its right, smaller. A tap on a
+  square sets a block of the chosen colour on that square's stack; with the remove tool (⌫) it takes the top block off. The colours (the level's
+  two to four) and ⌫ are the play pad (`playActs`), the chosen one ringed. Blocks only stack, so a model is a stack of colours a square.
+- Every board its own model (`modelOf`): grown a block at a time from the plot's middle, on a stack begun or beside one, to a count from the
+  level's band (`LV`: 4×4 two colours two high 5–8 blocks, up to 7×7 four colours five high 22–30); always one piece. Done when every stack is the
+  model's, colour for colour; par the model's blocks; stars by moves (set or taken off): at par 3, within half again 2, else 1; the fewest kept
+  (`blocks.best`). A board no one plays builds its model layer by layer, holds it and starts again. A plain board under it (`cellGrid`, one
+  colour), so only the plot's own squares read as squares.
+- Part 7: every level's models in their bands, one piece, no stack too tall; a model built by its own order done at par for 3 stars; the remove
+  tool; a wrong colour not done; real clicks on the pad's second colour, on a plot square (a block of it set), on ⌫ and the square again (taken
+  off); a board no one plays building. Looked at in a screenshot.
+- Not done: a tap is read on the ground, so with the board tilted a tap on the top of a tall stack can land on the square behind it; free building
+  apart from the model; undo.
