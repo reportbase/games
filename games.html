@@ -56898,12 +56898,18 @@ const TRICK_APP = (() => {
     N.moves.push({ t, mine, theirs, miss: r.miss, ditch: r.whiteOff });
     N.said = r.miss ? who + ' met no ball' : !mine && !theirs ? who + ' cleared none' : who + ' cleared ' + [mine ? (t === 0 ? 'your ' : 'its ') + r.cleared[t].join(', ') : '', theirs ? (t === 0 ? 'the computer\'s ' : 'your ') + r.cleared[1 - t].join(', ') : ''].filter(Boolean).join(' and ');
     if (r.eight) N.said = mine || theirs ? N.said + ', and the 8' : who + ' put the 8 in the ditch';
-    if (r.whiteOff) N.said += ', the white in the ditch';
-    N.hand = false;
+    /* A SCRATCH (Nov 26: "If the cue ball goes in the gutter, it is a scratch."): the white in the ditch ends the turn whatever the ball cleared (what
+       it cleared stays cleared), and the other side has the white in hand on the head string (`kitchen`: dragged across it). The 8 in on a scratch
+       loses, as in 8-ball. (Until now the white was played from the ditch where it lay.) */
+    const scratch = r.whiteOff;
+    if (scratch){ N.said += ', a scratch: the white in the gutter';
+      const w = g.balls.find(b => b.cue); if (w){ Object.assign(w, { x: HEAD[0], z: 0, ditch: false, off: false, sunk: false, rail: undefined, rp: undefined });
+        for (let k = 0; k < 40; k++){ const z = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.5; if (g.balls.every(b => b === w || b.ditch || Math.hypot(b.x - HEAD[0], b.z - z) >= b.r + w.r + 0.02)){ w.z = z; break; } } } }
+    N.hand = scratch;
     if (r.eight){
-      N.over = c[t] === BWL_N ? t + 1 : 2 - t; N.said += c[t] === BWL_N ? ', all seven in first' : ', too soon';
+      const won = c[t] === BWL_N && !scratch; N.over = won ? t + 1 : 2 - t; N.said += won ? ', all seven in first' : scratch ? ', on a scratch' : ', too soon';
       if (N.over === 1 && !g.auto){ N.stars = c[1] <= 2 ? 3 : c[1] <= 4 ? 2 : 1; const k = bwlKey(g); if (!(BEST[k] >= N.stars)){ BEST[k] = N.stars; ARCADE.save('trickshots.best', JSON.stringify(BEST)); } }
-    } else if (!mine) N.turn ^= 1;
+    } else if (!mine || scratch) N.turn ^= 1;
     if (!N.over) g.ang = bwlAim(g.balls, N.turn);
     N.plan = null; N.gen = null; N.thinkAt = 0; g.anim = null; g.dirty = true; if (!g.auto) touch();
   }
@@ -56918,7 +56924,7 @@ const TRICK_APP = (() => {
       for (const a of aims) for (const pw of T.pows) for (const tip of T.tips){
         let got = 0, k = 0;
         for (const da of [0, -e, e]){ const st = strikeOf(a + da, tip[0], tip[1], pw, MU_TIP, 0), sm = simB(g.balls, st.dir, st.speed, st.w, st.vy); yield;
-          if (!sm) continue; const d = bwlDown(g.balls, sm); got += (d.eight ? (bwlCleared(sm.final)[t] === BWL_N ? 10 : -10) : 0) + d.cleared[t].length - 0.6 * d.cleared[1 - t].length - (d.whiteOff ? 0.1 : 0); k++; }
+          if (!sm) continue; const d = bwlDown(g.balls, sm); got += (d.eight ? (bwlCleared(sm.final)[t] === BWL_N ? 10 : -10) : 0) + d.cleared[t].length - 0.6 * d.cleared[1 - t].length - (d.whiteOff ? 1.5 : 0);   // (a scratch ends the turn and gives the white in hand: Nov 26) k++; }
         if (!k) continue; const score = got / k;
         if (!best || score > best.score) best = { a, p: pw, tip, score };
       }
@@ -58367,7 +58373,9 @@ const TRICK_APP = (() => {
   function rpMenu(){
     const act = key => { const f = framedCell(), A = window.getFieldApp && window.getFieldApp(); if (f && A && A.onPlayAct) A.onPlayAct(f.c, f.r, key); };
     const g = () => liveGame();
-    return [{ label: 'Replay', title: 'Play this game again from its first shot, on the board; ⏹ or Escape ends it.', when: () => { const q = g(); return !!(q && !q.rp && rpCan(q)); }, on(){ act('rp'); } }];
+    // (Nov 26: "Back to the bowling game. We're is the replay menu item ?": it was left out of the menu until a shot had been played and while one
+    //  ran, so it was not found; it is always there now outside a replay, greyed while there is nothing to play again)
+    return [{ label: 'Replay', title: 'Play this game again from its first shot, on the board; ⏹ or Escape ends it.', when: () => { const q = g(); return !(q && q.rp); }, get disabled(){ return !rpCan(g()); }, on(){ act('rp'); } }];
   }
   function matchApp(m, o){
     const A = Object.defineProperties({}, Object.getOwnPropertyDescriptors(app));
