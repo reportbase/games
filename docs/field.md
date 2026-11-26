@@ -621,3 +621,10 @@ press reaches `onToolTap(c, r, index)`. Drawn as draw's buttons are. It is not t
 row has no dots, as before) nor the play pad. The block builder is the first to use it: its colours, ⌫ Remove and ↶ Undo (it had them in the
 row for a few hours, and on the play pad before that). Part 7's block builder check clicks the bar's buttons for real: up with the row shut,
 above the dots (or the dots away), four buttons, no words, the chosen one ringed. Looked at in a screenshot.
+
+**The tool bar at the bottom, wrapping** (Nov 26: "It should still be on the bottom and wrap around if the buttons extend beyond the screen
+width."). With the row shut the bar stands at the very foot of the screen (`--bb-bottom`, 8px), not above the row's peek; with the row open it
+stands above the row, as before. It is as wide as its buttons up to the screen less 16px a side (`width: max-content`: centred by `left: 50%`
+alone it wrapped at half the screen), and past that it wraps onto more lines, growing upward. A game with both the row's dots and the bar would
+have the bar over the dots; none has both yet (the block builder has no dots). Part 7: the bar within 12px of the bottom with the row shut, and
+on a screen 150px wide on more than one line, inside the screen, at the bottom; passing. Looked at in a screenshot.
