@@ -182,23 +182,26 @@ try {
       return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; }, [u, v]);
     const pad = key => page.evaluate(k => { const b = document.querySelector('#playPad button[data-key="' + k + '"]'); if (!b) return null; const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }, key);
     const gs = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = D.GAMES.get(f.c + '_' + f.r); return g ? { tool: g.tool, st: g.st.map(s => s.join('')).join('|'), moves: g.moves } : null; });
-    for (let k = 0; k < 10 && !(await pad('c1')); k++) await frame(page, 250);
-    const c1 = await pad('c1'); if (c1){ await page.mouse.click(c1[0], c1[1]); await drawn(page, 300); }
-    const t1 = await gs();
+    // (the colours are the bottom row's tiles since Nov 26: "Put the block color options on the bottom object  browser"; the pad has none)
+    const row = () => page.evaluate(() => { const A = window.getFieldApp(), f = A._debug.LIVE, T = A.statTiles(f.c, f.r) || []; return T.map(t => t.value + (t.bg ? '*' : '')).join(','); });
+    const tile = name => page.evaluate(n => { const A = window.getFieldApp(), f = A._debug.LIVE; A.onStatTap(f.c, f.r, A.statTiles(f.c, f.r).findIndex(t => t.value === n)); }, name);
+    const row0 = await row(), padKeys = await page.evaluate(() => [...document.querySelectorAll('#playPad button')].map(b => b.dataset.key).join());
+    await tile('Blue'); await drawn(page, 300);
+    const t1 = await gs(), row1 = await row();
     const q = (0.69 - 0.05) / L0.n, cu = 0.05 + (Math.floor(L0.n / 2) + 0.5) * q, cv = 0.17 + (Math.floor(L0.n / 2) + 0.5) * q, mid = Math.floor(L0.n / 2) * L0.n + Math.floor(L0.n / 2);
     let p = await at(cu, cv); await page.mouse.click(p.x, p.y); await drawn(page, 500);
     const t2 = await gs();
-    const x = await pad('x'); if (x){ await page.mouse.click(x[0], x[1]); await drawn(page, 300); }
+    await tile('Remove'); await drawn(page, 300);
     p = await at(cu, cv); await page.mouse.click(p.x, p.y); await drawn(page, 500);
     const t3 = await gs();
-    const live = { tool: t1 && t1.tool, set: t2 && t2.st.split('|')[mid], off: t3 && t3.st.split('|')[mid], moves: t3 && t3.moves, toolX: t3 && t3.tool };
+    const live = { row0, row1, padKeys, tool: t1 && t1.tool, set: t2 && t2.st.split('|')[mid], off: t3 && t3.st.split('|')[mid], moves: t3 && t3.moves, toolX: t3 && t3.tool };
     const shown = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, f = D.LIVE, c = f.c + 2, r = f.r;
       const look = () => A.cellItems(c, r).filter(i => i.kind === 'blkCube').length, seen = new Set();
       for (let k = 0; k < 12; k++){ seen.add(look()); await new Promise(ok => setTimeout(ok, 400)); } return seen.size; });
     const ok = bk.models === '40,40,40,40,40' && bk.built === 'true,true,3' && bk.removed === '0,2' && bk.wrong === false
-      && live.tool === 1 && live.set === '1' && live.off === '' && live.moves === 2 && live.toolX === -1 && shown >= 3;
+      && /^Red\*,Blue,.*Remove$/.test(live.row0) && /^Red,Blue\*/.test(live.row1) && !/c0|c1|x/.test(live.padKeys) && live.tool === 1 && live.set === '1' && live.off === '' && live.moves === 2 && live.toolX === -1 && shown >= 3;
     if (!ok) failures.push('[block builder] ' + JSON.stringify({ bk, live, shown }));
-    console.log(`${ok ? 'ok  ' : 'FAIL'} block builder (models of every level in their bands, one piece, no stack too tall; built by its own order at par, 3 stars; the remove tool; a wrong colour not done; a real click on the pad's second colour, a real click setting a block of it, the remove tool and a real click taking it off; a board no one plays building, ${shown} looks)`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} block builder (models of every level in their bands, one piece, no stack too tall; built by its own order at par, 3 stars; the remove tool; a wrong colour not done; the bottom row's colours and Remove as tiles, the chosen one lit and none on the pad, Blue chosen and a real click setting a block of it, Remove and a real click taking it off; a board no one plays building, ${shown} looks)`);
   }
 
 
