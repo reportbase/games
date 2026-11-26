@@ -1539,3 +1539,6 @@ made for the second half: it stands beside bowling in the list where curling sto
 - Part 7: bowling's racks differ across five boards and all stay on the table; bumper pool's layouts over 60 boards are all half-turn symmetric
   and clear, at least three patterns, fewer bumpers and wider guards near than far, and the shot reading a far board's own bumpers. The "off a
   bumper" shot is now played on a board whose middle is the diamond.
+
+**Only the minimap's table see-through** (Nov 26: "Only the minimap background should be transparent"). `#tsMap` is no longer faded as a whole;
+its frame and cloth are drawn at `MAP_BG` (0.45), and the pockets, bumpers, balls and the aim line over them whole. Checked by a screenshot in 9-ball.
