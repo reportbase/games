@@ -152,6 +152,55 @@ try {
     console.log(`${ok ? 'ok  ' : 'FAIL'} bumper pool (a table a board, the same turned a half turn, the guards closer and more bumpers farther out; five a side, the marked one first; a ball before its marked one brought back, one in its own pocket keeping the turn, one in the wrong pocket brought back, all five a win; off a bumper that stays, between the guards into the pocket; a press picking a ball once the marked one is in; the real Enter shot; a board no one plays shot ${rec.shots} balls${rec.over ? ', to a win' : ''})`);
   }
 
+  // BLOCK BUILDER (Nov 26: "How about a simple block building game", then "Build to a model"): every level's models in their bands and one piece
+  // (every stack beside another), no stack over the level's height; a model built by its own order done at par for 3 stars; the remove tool taking
+  // the top block off; a wrong colour not done; and real input: a real click on the pad's second colour, a real click on a plot square setting a
+  // block of it, then the remove tool and a real click taking it off; a board no one plays building its model
+  current = 'block builder';
+  {
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'blocks')));
+    await drawn(page, 1500); await page.evaluate(() => window.__settle && window.__settle());
+    const bk = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, out = {};
+      const one = S => { const n = S.n, on = S.st.map(s => s.length > 0), seen = new Set(), st = [on.indexOf(true)];
+        while (st.length){ const i = st.pop(); if (seen.has(i)) continue; seen.add(i); const x = i % n, y = (i / n) | 0;
+          for (const j of [x > 0 ? i - 1 : -1, x < n - 1 ? i + 1 : -1, y > 0 ? i - n : -1, y < n - 1 ? i + n : -1]) if (j >= 0 && on[j] && !seen.has(j)) st.push(j); }
+        return seen.size === on.filter(Boolean).length; };
+      out.models = [0, 1, 2, 3, 4].map(k => { let ok = 0; for (let c = 0; c < 40; c++){ const S = D.modelOf(c * 13 + k * 200, c); const L = S.D;
+        if (S.par >= L.lo && S.par <= L.hi && one(S) && S.st.every(s => s.length <= L.h && s.every(x => x < L.cols))) ok++; } return ok; }).join();
+      const g = D.fresh(3, 4); for (const [i, col] of g.S.order){ g.tool = col; D.act(g, i, true); }
+      out.built = [g.done, g.moves === g.S.par, D.starsOf(g.moves, g.S.par)].join();
+      const h = D.fresh(3, 4); h.tool = h.S.D.cols - 1; const i0 = h.S.order[0][0]; D.act(h, i0, true); h.tool = -1; D.act(h, i0, true);
+      out.removed = [h.st[i0].length, h.moves].join();
+      const w = D.fresh(3, 4); for (const [i, col] of w.S.order){ w.tool = (col + 1) % w.S.D.cols; D.act(w, i, true); } out.wrong = w.done;
+      return out;
+    });
+    // real input on the framed board
+    const L0 = await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE; D.GAMES.delete(f.c + '_' + f.r); const g = D.gameAt(f.c, f.r); return { n: g.n, cols: g.S.D.cols }; });
+    const at = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, L = window.LAB || {}, bW = W.boardW();
+      const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+      return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; }, [u, v]);
+    const pad = key => page.evaluate(k => { const b = document.querySelector('#playPad button[data-key="' + k + '"]'); if (!b) return null; const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }, key);
+    const gs = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = D.GAMES.get(f.c + '_' + f.r); return g ? { tool: g.tool, st: g.st.map(s => s.join('')).join('|'), moves: g.moves } : null; });
+    for (let k = 0; k < 10 && !(await pad('c1')); k++) await frame(page, 250);
+    const c1 = await pad('c1'); if (c1){ await page.mouse.click(c1[0], c1[1]); await drawn(page, 300); }
+    const t1 = await gs();
+    const q = (0.69 - 0.05) / L0.n, cu = 0.05 + (Math.floor(L0.n / 2) + 0.5) * q, cv = 0.17 + (Math.floor(L0.n / 2) + 0.5) * q, mid = Math.floor(L0.n / 2) * L0.n + Math.floor(L0.n / 2);
+    let p = await at(cu, cv); await page.mouse.click(p.x, p.y); await drawn(page, 500);
+    const t2 = await gs();
+    const x = await pad('x'); if (x){ await page.mouse.click(x[0], x[1]); await drawn(page, 300); }
+    p = await at(cu, cv); await page.mouse.click(p.x, p.y); await drawn(page, 500);
+    const t3 = await gs();
+    const live = { tool: t1 && t1.tool, set: t2 && t2.st.split('|')[mid], off: t3 && t3.st.split('|')[mid], moves: t3 && t3.moves, toolX: t3 && t3.tool };
+    const shown = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, f = D.LIVE, c = f.c + 2, r = f.r;
+      const look = () => A.cellItems(c, r).filter(i => i.kind === 'blkCube').length, seen = new Set();
+      for (let k = 0; k < 12; k++){ seen.add(look()); await new Promise(ok => setTimeout(ok, 400)); } return seen.size; });
+    const ok = bk.models === '40,40,40,40,40' && bk.built === 'true,true,3' && bk.removed === '0,2' && bk.wrong === false
+      && live.tool === 1 && live.set === '1' && live.off === '' && live.moves === 2 && live.toolX === -1 && shown >= 3;
+    if (!ok) failures.push('[block builder] ' + JSON.stringify({ bk, live, shown }));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} block builder (models of every level in their bands, one piece, no stack too tall; built by its own order at par, 3 stars; the remove tool; a wrong colour not done; a real click on the pad's second colour, a real click setting a block of it, the remove tool and a real click taking it off; a board no one plays building, ${shown} looks)`);
+  }
+
 
   // MARBLE RUN (Oct 28: "2,   3 curling, bowling, marble run"): levels by ring; puzzles made at levels 1, 3 and 5, every made way
   // running the marble to the cup in the game's own physics, par growing; a piece taken out and the marble falls; a piece laid
