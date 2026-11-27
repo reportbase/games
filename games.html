@@ -56319,18 +56319,14 @@ const TRICK_APP = (() => {
      A rack is twenty shots or so and each is planned, so it is made a little at a time (`nineRecSoon`: a generator a board, `NINE_REC_MS` a
      frame for all of them together), the board showing its rack at rest until it is ready; kept at `NINE_REC_HZ` frames a second, the latest
      `NINE_REC_CAP` boards (a rack is about a megabyte). The planner draws its hands' error at random, so a board's rack is another each visit. */
-  const RECS_N = new Map(), NREC = new Map(), NINE_REC_CAP = 30, NINE_REC_MS = 8, NINE_REC_HZ = 20, NINE_REC_SHOTS = 60, BG_SHOTS = 1;
+  const RECS_N = new Map(), NREC = new Map(), NINE_REC_CAP = 30, NINE_REC_MS = 8, NINE_REC_HZ = 20, NINE_REC_SHOTS = 60;
   let nrAt = 0, nrUsed = 0;
   function* nineRecGen(idx, m){   // (m: the game's entry in MATCH)
     const lv = levelAt(idx), B0 = m.rack(idx), n = B0.length;
     const g = { idx, lv, auto: true, balls: B0.map(b => ({ ...b })), potted: 0, shots: 0, ang: 0, power: 40, nine: matchState(m) };
     const still = balls => { const f = new Array(2 * n), h = new Array(n).fill(0); balls.forEach((b, i) => { f[2 * i] = b.sunk ? NaN : b.x; f[2 * i + 1] = b.sunk ? NaN : b.z; }); return [f, h]; };
     let plan = m.brk ? BREAK() : yield* m.planGen(g, lv), out = null; const first = plan;
-    /* ONE SHOT, NOT A RACK (Nov 27: "Still not playing.   You can simplify the game play to reduce the load on background board if that helps"):
-       a whole rack, up to `recShots` shots each planned by the computer's search, took a phone seconds to minutes a board, and the boards in view
-       stood at their racks waiting for it. A board no one plays now shows its first shot alone (the break, which needs no search, where the game
-       has one), played over and over (`R.cycle`). */
-    const most = Math.min(BG_SHOTS, m.recShots());
+    const most = m.recShots();
     while (!g.nine.over && g.shots < most){
       const st = strikeOf(plan.a, plan.tip[0], plan.tip[1], plan.p, MU_TIP, 0), sm = m.sim(g.balls, st.dir, st.speed, st.w, st.vy); if (!sm) break;
       yield;
@@ -56370,6 +56366,57 @@ const TRICK_APP = (() => {
     if (m.onRec) m.onRec(idx0, d);
     RECS_N.set(idx, R); if (RECS_N.size > NINE_REC_CAP) RECS_N.delete(RECS_N.keys().next().value);
     return R;
+  }
+  /* A BOARD NO ONE PLAYS PLAYS ITS GAME LIVE (Nov 27: "Don't record the background games,  they should be light weight.", then "I'd like to see the
+     full game in the background, no recording.   Keep each game different with a seed"). Until now such a board showed a recording made ahead
+     (`nineRecSoon`: a whole rack, worked out 8 ms a frame before a ball moved, the boards in view standing at their racks meanwhile). Now each board
+     in view plays its game as the board you play does: the computer at the board's level, both sides, plans a shot in slices of the frame
+     (`BG_MS` a frame for all of them together), the shot is flown when it is struck and played by the clock, the rules judge it, and the next is
+     planned; when the game is over a new one is racked. Nothing is kept ahead of what is shown. Each board's games are its own and the same each
+     visit: the planner's hand error (it draws `Math.random`) is drawn from a generator seeded by the board's number and its game's (`BG.rnd`). The
+     latest `BG_CAP` boards are kept; a board out of view stops where it is. Pool hockey, real time, keeps its own recording. */
+  const BG = new Map(), BG_CAP = 48, BG_MS = 6, BG_AIM = 0.9;
+  let bgAt = 0, bgUsed = 0;
+  function bgNew(idx, game, m){
+    const lv = levelAt(idx), B = m.rack(idx).map(b => ({ ...b }));
+    return { idx, m, game, rnd: rng(idx * 7919 + game * 104729 + 17), gen: null, plan: m.brk ? BREAK() : null, phase: m.brk ? 'aim' : 'plan', at: performance.now(),
+             g: { idx, lv, auto: true, balls: B, potted: 0, shots: 0, ang: 0, power: 40, nine: matchState(m) }, rot: B.map(b => rotStart(idx + game, b.n)), s: null, rk: 0 };
+  }
+  function bgSeeded(G, f){ const r0 = Math.random; Math.random = G.rnd; try { return f(); } finally { Math.random = r0; } }
+  function bgView(idx0){
+    const m = M() || MATCH.nine, key = m.pre + idx0, now = performance.now(), wake = () => { try { window.fieldWake && window.fieldWake(); } catch {} };
+    let G = BG.get(key);
+    if (G){ BG.delete(key); BG.set(key, G); } else { G = bgNew(idx0, 0, m); BG.set(key, G); if (BG.size > BG_CAP) BG.delete(BG.keys().next().value); }
+    const g = G.g, pos = () => g.balls.map(b => b.sunk ? null : [b.x, b.z, b.ditch ? BWL_SINK : 0]);
+    if (G.phase === 'plan'){
+      if (now - bgAt > 12){ bgAt = now; bgUsed = 0; }
+      if (bgUsed < BG_MS){
+        if (!G.gen) G.gen = m.planGen(g, g.lv);
+        const t0 = performance.now(); let step;
+        bgSeeded(G, () => { do { step = G.gen.next(); } while (!step.done && performance.now() - t0 < BG_MS - bgUsed); });
+        bgUsed += performance.now() - t0;
+        if (step.done){ G.gen = null; G.plan = step.value; G.phase = 'aim'; G.at = now; }
+      }
+      wake();
+    }
+    if (G.phase === 'aim'){
+      if (now - G.at < BG_AIM * 1000){ wake();
+        return { B: g.balls, pos: pos(), ch: null, rot: G.rot, lv: g.lv, cue: { ang: G.plan.a, power: G.plan.p, elev: 0, tip: { x: G.plan.tip[0], y: G.plan.tip[1] }, chalk: true }, paths: 'off' }; }
+      const st = strikeOf(G.plan.a, G.plan.tip[0], G.plan.tip[1], G.plan.p, MU_TIP, 0), sm = m.sim(g.balls, st.dir, st.speed, st.w, st.vy);
+      if (!sm){ G.phase = 'over'; G.at = now; }
+      else { G.s = sm; G.rk = 0; G.phase = 'run'; G.at = now; }
+    }
+    if (G.phase === 'run'){
+      const fr = G.s.frames, k = Math.min(fr.length - 1, Math.floor((now - G.at) / 1000 * 60));
+      for (; G.rk < k; G.rk++){ const a = fr[G.rk], b = fr[G.rk + 1], h = G.s.heights[G.rk + 1];
+        for (let i = 0; i < g.balls.length; i++) if (!isNaN(a[2 * i]) && !isNaN(b[2 * i]) && h[i] < 0.02) G.rot[i] = roll(G.rot[i], b[2 * i] - a[2 * i], b[2 * i + 1] - a[2 * i + 1]); }
+      if (k < fr.length - 1) return { B: g.balls, pos: g.balls.map((b, i) => isNaN(fr[k][2 * i]) ? null : [fr[k][2 * i], fr[k][2 * i + 1], G.s.heights[k][i]]), ch: null, rot: G.rot, lv: g.lv, trail: { fr, k, hz: 60 } };
+      g.nine.hand = false; g.shots++; bgSeeded(G, () => m.finish(g, G.s)); G.s = null;
+      if (g.nine.over || g.shots >= m.recShots()){ G.phase = 'over'; G.at = now; } else { G.phase = 'rest'; G.at = now; }
+    }
+    if (G.phase === 'rest'){ if (now - G.at > RUN_GAP * 1000){ G.phase = 'plan'; G.plan = null; } wake(); }
+    if (G.phase === 'over' && now - G.at > HOLD_T * 1000){ const n = bgNew(idx0, G.game + 1, m); BG.set(key, n); wake(); }
+    return { B: g.balls, pos: pos(), ch: null, rot: G.rot, lv: g.lv };
   }
   function recSoon(idx, force){
     if (NINE()) return nineRecSoon(idx, force);
@@ -57636,6 +57683,7 @@ const TRICK_APP = (() => {
     const idx = boardIdx(c, r), making = { B: [], pos: [], ch: null, making: true };
     // (asked for every frame it is in view, so its job stays in the queue; the demo after it is made, one board in 30 ms)
     if (!NINE() && idx >= CHALLENGES.length && !MINE.has(idx) && !puzzleSoon(idx, levelAt(idx))) return making;
+    if (NINE() && !M().rt) return bgView(idx);   // (A BOARD NO ONE PLAYS PLAYS ITS GAME LIVE, above)
     const R = recSoon(idx);
     // (nine-ball's rack still being played out for this board: the rack at rest meanwhile)
     if (!R && NINE()){ const B = M().rack(idx); return { B, pos: B.map(b => [b.x, b.z, 0]), ch: null, lv: levelAt(idx), rot: B.map(b => rotStart(idx, b.n)) }; }
