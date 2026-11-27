@@ -657,3 +657,9 @@ several sizes it now reads their centres, and asks that they are not all one siz
 turned into the games bar; wander records it as a working case of K, not N (*Reads and Writes* §6, "K and N"; essay 16 §10, "A bar
 of tools"), the bar's first form as the dual vantage's way of placing the same chips (essay 27 §5), and the Cauchy no line of the
 code named (essay 17 §2). The demo: https://reportbase.github.io/wander/ring.html.
+
+**The site stopped publishing, Nov 26–27** (Nov 27: "Does games have the new ring?"). A `node_modules` symlink, made in the cloud sandbox
+to run the tests, was committed with #274: `.gitignore`'s `node_modules/` (with the slash) matches a folder, not a symlink. GitHub Pages'
+Jekyll build then failed on every push ("No such file or directory … /github/workspace/node_modules"), so the live page stayed at the
+version before #274 (no tool chips in the ring, no single-vantage ring). The symlink is removed and the rule is `node_modules`, which
+matches both.
