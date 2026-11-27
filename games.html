@@ -4700,7 +4700,7 @@ function pinchZoom(ratio){
 }
 function overChrome(e){
   const t = e && e.target;
-  return !!(t && t.closest && t.closest('button, input, select, #menu, .panel, #dials, #gameBar'));
+  return !!(t && t.closest && t.closest('button, input, select, #menu, .panel, #dials, #gameBar, #tsMap'));   // (#tsMap: the pool games' minimap, turned by a drag of its own, Nov 27)
 }
 function mountPan(){
   addEventListener('pointerdown', e => {
@@ -58062,16 +58062,27 @@ const TRICK_APP = (() => {
      picture of it from straight above stands in the lower right, 16px from the edges as the two buttons are: the cloth, the pockets (none on a
      table without them), every ball where it is drawn this frame in its own colour (a stripe a white ring), and the shot's line from the white
      while it is your shot. Drawn from the view the board itself is drawn from (`mapDraw(g, V)`), so a shot running runs on it too. It takes no
-     touches (what is under it is still the table's) and is away with the bottom row open, as the whole-table button is. */
-  const MAP = { el: null, seen: 0, sig: '' }, MAP_W = 150, MAP_BG = 0.45;
+     touches (what is under it is still the table's) and is away with the bottom row open, as the whole-table button is.
+     TURNED BY HAND (Nov 27: "You should be able to rotate the board bu rotataing the minimap directly"): since then it does take a finger. A drag on it
+     turns the view about the place it looks at (`FIELD_WORLD.turnTo`) by the angle the finger has gone round the minimap's middle, so the board turns
+     as the minimap turns under the finger; the cue keeps its aim. The field's own pan is kept off it (`overChrome` names `#tsMap`). */
+  const MAP = { el: null, seen: 0, sig: '' }, MAP_W = 150, MAP_BG = 0.45; const MAP_TURN = 1;
   function mapEnsure(){
     if (MAP.el || typeof document === 'undefined') return MAP.el;
     // (the canvas in a box of its own: the page's `body > canvas` rule would put a canvas of the body's in the top left)
     // (square since Nov 25, the table drawn in it turned as the board lies on the screen: TURNED AS THE BOARD, below)
     const el = document.createElement('div'), cv = document.createElement('canvas'); el.id = 'tsMap'; cv.width = MAP_W * 2; cv.height = MAP_W * 2;
-    el.style.cssText = 'position:fixed;right:16px;bottom:16px;width:' + MAP_W + 'px;height:' + MAP_W + 'px;z-index:29;display:none;pointer-events:none';   // (see-through, Nov 25: "make the mimap transparent"; since Nov 26 the table alone: MAP_BG below)
+    el.style.cssText = 'position:fixed;right:16px;bottom:16px;width:' + MAP_W + 'px;height:' + MAP_W + 'px;z-index:29;display:none;pointer-events:auto;touch-action:none;cursor:grab';   // (see-through, Nov 25: "make the mimap transparent"; since Nov 26 the table alone: MAP_BG below)
     cv.style.cssText = 'display:block;width:100%;height:100%';
     el.appendChild(cv); document.body.appendChild(el); MAP.el = el; MAP.cv = cv;
+    { let T = null; const angOf = e => { const r = el.getBoundingClientRect(); return Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)); };
+      el.addEventListener('pointerdown', e => { e.stopPropagation(); e.preventDefault(); const W = window.FIELD_WORLD; if (!W) return;
+        T = { id: e.pointerId, a: angOf(e), yaw: W.st.yaw || 0, turn: 0 }; try { el.setPointerCapture(e.pointerId); } catch {} MAP.seen = performance.now(); });
+      el.addEventListener('pointermove', e => { if (!T || e.pointerId !== T.id) return; e.stopPropagation(); const a = angOf(e); let d = a - T.a; d = Math.atan2(Math.sin(d), Math.cos(d)); T.a = a; T.turn += d;
+        // (a turn of the finger clockwise on the screen is the field's heading grown by as much: the board, as the minimap, turns with the finger)
+        try { window.FIELD_WORLD.turnTo(T.yaw + MAP_TURN * T.turn * 180 / Math.PI); window.fieldWake && window.fieldWake(); } catch {} MAP.seen = performance.now(); });
+      const up = e => { if (T && e.pointerId === T.id){ T = null; ateAt = performance.now(); } e.stopPropagation(); };
+      el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up); }
     setInterval(() => { if (MAP.el.style.display !== 'none' && performance.now() - MAP.seen > CTL_GONE) mapHide(); }, 200);
     return el;
   }
