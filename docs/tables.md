@@ -1561,3 +1561,13 @@ minimap turns under the finger; the cue keeps its aim, and the minimap, drawn tu
 (`overChrome` now names `#tsMap`, a change to the field's shared check). Checked by a probe in 9-ball behind the white: a real mouse drag of a
 quarter turn clockwise round the minimap turned the table's long axis on the screen by 82–83° the same way (the tilted view foreshortens it), the
 cue's aim unchanged, no page error. Not checked on a phone's touch, nor in the other pool games beyond sharing the code.
+
+**The boards no one plays play again while the field rests** (Nov 27: "The background boards are not being played"). In 9-ball and the games on
+its engine a board no one plays shows a whole rack played out by the computer against itself (`nineRecSoon`), and that rack is worked out only
+when the board is asked for its pieces, `NINE_REC_MS` (8 ms) at a time. A field with nothing changing rests (`_restDecide`) and then draws, and so
+asks, once in half a second; a board standing at its rack changes nothing, so the field kept resting and the boards in view stood still for
+minutes. Now an ask that leaves a board's rack unfinished wakes the field (`window.fieldWake`), so it is asked every frame until its rack is
+played; trick shots' boards do the same while their recordings wait their turn (`recSoon`'s 30 ms spacing). Checked by a probe in 9-ball: six
+boards asked in turn every 20 ms, the field woken on every unfinished ask (none on main), and their racks played as on main (the first after 8–13
+rounds, four to six of six by 80). Not seen on a device: headless drawing is about one frame a second, too slow for the field ever to rest, so the
+rest itself was not reproduced here. Tried and taken out: finishing one board's rack before starting the next (no faster in the probe).
