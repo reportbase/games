@@ -1580,3 +1580,14 @@ before (`R.cycle`), and no plan is made after the last shot. Measured in the hea
 9-ball 0.23–0.41 s → 0–14 ms, 8-ball 0.40–0.73 s → 0–28 ms, straight pool 1.5–1.7 s → 1–17 ms, one-pocket 0.6–0.9 s → 0–24 ms, bank pool
 0.9–1.6 s → 7–9 ms, three-cushion 2.6–2.9 s → 61–79 ms, bowling 0.58–0.89 s → 51–117 ms, bumper pool 2.4–3.7 s → 59–137 ms; a recording now
 2.6–5.8 s long, against 37 s to 4 minutes. Pool hockey's (its own `recGen`) is unchanged. Not seen on a device.
+
+**A board no one plays plays its game live** (Nov 27: "Don't record the background games,  they should be light weight.", then "I'd like to see
+the full game in the background, no recording.   Keep each game different with a seed"). The recording of the two notes above (`nineRecSoon`,
+first a whole rack, then its first shot) is gone for every match game but pool hockey. A board in view (`bgView`, `BG`) plays as the board you
+play: the computer at the board's level plans each side's shot in slices of the frame (`BG_MS`, 6 ms a frame for all the boards together), holds
+the aim a moment (`BG_AIM`), the shot is flown when struck (the game's own `sim`) and played by the clock, the rules judge it (`finish`), a pause
+(`RUN_GAP`), the next shot; a game over (or past `recShots`) is held `HOLD_T` and a new one racked. Nothing is worked out ahead of what is shown.
+Each board's games differ and repeat each visit: the planners' hand error, drawn from `Math.random`, is drawn while a background board plans from
+`rng(board · 7919 + game · 104729 + 17)` (`bgSeeded`). The latest `BG_CAP` (48) boards are kept, and one out of view stops where it is. Checked by a
+probe in 9-ball, 8-ball, straight pool, three-cushion, bowling and bumper pool: three boards' views read every 250 ms aim, run, rest and aim again,
+their shots after the break different board from board, no page error. Not seen: a game played to its end and racked again, or on a device.
