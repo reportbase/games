@@ -57972,6 +57972,17 @@ const TRICK_APP = (() => {
     /* ANY TAP ON THE SCREEN PUTS THE INSET AWAY (Nov 22: "Tapping the screen clears the dials of they are open."): read here on the window, so a tap
        off the table, on another board or on the page's edge does it too, whatever the field makes of that tap. A press that began with the inset up,
        outside it, and lifted where it came down within the hold's time. */
+    /* TWO FINGERS ARE THE VIEW'S, NOT THE PULL'S (Nov 27: "The pull is being shown when two fingers pan the screen.   Don't do that."): the first
+       finger's press started the hold's timer, and a second finger landing to pan or pinch did not stop it, so the velocity bar came up under a two-
+       finger pan. Fingers down are counted here on the window; when a second lands, the hold's timer is stopped, a bar already up is put away with
+       the power as it was, and the press is let go (the field pans the view, the cue stays where it was). */
+    const downs = new Set();
+    addEventListener('pointerdown', e => { if (e.pointerType !== 'touch') return; downs.add(e.pointerId); if (downs.size < 2) return;
+      clearTimeout(HOLD_TM); const d = DRAG;
+      if (d && d.pull && !d.pull.done){ d.pull.done = true; CTL.pulling = null; CTL.pull.style.display = 'none'; CTL.fill.style.height = '0'; setPower(d.g, d.pull.was); }
+      if (d && !d.rt){ if (d.spinHold) CTL.spin = false; DRAG = null; ateAt = performance.now(); touch(); } }, true);
+    const lift = e => { downs.delete(e.pointerId); };
+    addEventListener('pointerup', lift, true); addEventListener('pointercancel', lift, true);
     let tapFrom = null;
     addEventListener('pointerdown', e => { tapFrom = CTL.spin && !el.contains(e.target) ? [e.clientX, e.clientY, performance.now()] : null; }, true);
     addEventListener('pointerup', e => { const f = tapFrom; tapFrom = null;
@@ -58005,7 +58016,7 @@ const TRICK_APP = (() => {
      hidden until a press is held still `HOLD_MS` and then pulled (`pullStart`, from `claimsPan`'s timer): it stands by the finger, fills with how
      far the finger has gone from where it pressed (`PULL_PX` the whole of it), and letting go shoots as hard as it was pulled (let go at once, nothing
      is shot and the power is as it was). A tap on the white no longer shoots: the bar, Shoot in the row, Space and Enter do. */
-  let HOLD_MS = 450; const PULL_PX = 200;   // (`_debug.holdMs` sets the hold for a test: the software renderer can take longer than this to hand a drag its first move)
+  let HOLD_MS = 450; const PULL_PX = 200, TURN_GAIN = 1 / 3;   // (`_debug.holdMs` sets the hold for a test: the software renderer can take longer than this to hand a drag its first move)
   function ballScreen(x, z){
     try { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
       const p = new W.THREE.Vector3(T.boardX + (0.5 - Ub(x)) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - Vb(z)) * bW * (L.cellH || 1)).project(W.camera);
@@ -58019,8 +58030,33 @@ const TRICK_APP = (() => {
     CTL.el.style.display = at ? 'flex' : 'none';
     if (at){ CTL.el.style.left = Math.round(Math.max(4, Math.min(innerWidth - 96, at[0] - 46))) + 'px'; CTL.el.style.top = Math.round(Math.max(4, Math.min(innerHeight - 120, at[1] - 46))) + 'px'; ctlDraw(g); }
     CTL.pull.style.display = CTL.pulling ? 'block' : 'none';
+    cutSync(g, w);
   }
-  const ctlHide = () => { if (CTL.el){ CTL.el.style.display = 'none'; CTL.pull.style.display = 'none'; } CTL.g = null; CTL.pulling = null; CTL.spin = false; mapHide(); };
+  /* THE ANGLE FROM THE CUE TO THE BALL IT WILL MEET (Nov 27: "Show the angle between the cue stick and the target ball."): the cut angle, between
+     the cue's line and the line from where the white will touch the first ball it meets (the ghost ball) to that ball's middle: 0° full on, 90° a
+     graze. Worked out from the table as it stands (the first ball whose middle passes within two radii of the white's line, the cushions not
+     followed), and shown beside that ball while it is your shot. */
+  function cutOf(g, w){
+    const ca = Math.cos(g.ang), sa = Math.sin(g.ang); let best = null;
+    for (const b of g.balls){ if (b === w || b.sunk) continue;
+      const rr = (w.r || R) + (b.r || R), dx = b.x - w.x, dz = b.z - w.z, t = dx * ca + dz * sa, off = -dx * sa + dz * ca;
+      if (t <= 0 || Math.abs(off) >= rr) continue;
+      const s = t - Math.sqrt(rr * rr - off * off); if (s < 0 || (best && s >= best.s)) continue;
+      best = { s, b, deg: Math.asin(Math.min(1, Math.abs(off) / rr)) * 180 / Math.PI }; }
+    return best;
+  }
+  function cutSync(g, w){
+    if (!CTL.cut){ const el = document.createElement('div'); el.id = 'tsCut';
+      el.style.cssText = 'position:fixed;left:0;top:0;z-index:30;display:none;pointer-events:none;font:600 0.8125rem/1.2 ' + UI_SANS + ';color:#f2f0ea;text-shadow:0 1px 3px #000;white-space:nowrap';
+      document.body.appendChild(el); CTL.cut = el; }
+    const mine = g && w && !g.anim && !ED.on && !(g.nine && (g.nine.turn || g.nine.over || g.nine.rt));
+    const c = mine ? cutOf(g, w) : null, at = c ? ballScreen(c.b.x, c.b.z) : null;
+    CTL.cutDeg = c ? c.deg : null;
+    if (!at){ CTL.cut.style.display = 'none'; return; }
+    CTL.cut.textContent = c.deg.toFixed(1) + '°'; CTL.cut.style.display = 'block';
+    CTL.cut.style.left = Math.round(Math.max(4, Math.min(innerWidth - 60, at[0] + 14))) + 'px'; CTL.cut.style.top = Math.round(Math.max(4, Math.min(innerHeight - 24, at[1] - 24))) + 'px';
+  }
+  const ctlHide = () => { if (CTL.el){ CTL.el.style.display = 'none'; CTL.pull.style.display = 'none'; } if (CTL.cut) CTL.cut.style.display = 'none'; CTL.g = null; CTL.pulling = null; CTL.spin = false; mapHide(); };
   /* THE WHOLE TABLE, SMALL, WHILE YOU STAND BEHIND THE WHITE (Nov 23: "When the full board is not shown, show a  minimap in the lower right"). From
      behind the white the far balls hide one another and a ball behind you is not seen at all. While the whole table is not up (`WHOLE`), a small
      picture of it from straight above stands in the lower right, 16px from the edges as the two buttons are: the cloth, the pockets (none on a
@@ -58441,7 +58477,14 @@ const TRICK_APP = (() => {
          aim the shot at the finger, so the cue swung about on the far side of the white from the hand. Now the cue lies from the white toward the
          finger, as a stick held there, and the shot goes the other way: the aim is at the finger's place mirrored through the white. A tap on a
          point still aims the shot at it (a ball tapped is the ball meant). */
-      else { const w = g.balls.find(b => b.cue && !b.sunk); if (w){ aimAt(g, 2 * w.x - x, 2 * w.z - z); DRAG.cue = true; } }
+      /* THE CUE TURNS SLOWER THAN THE HAND (Nov 27: "Roatating the cue stick is to fast."): the cue lay on the line from the white to the finger, so
+         near the white a small move swung it a long way. Now the drag turns the cue by `TURN_GAIN` of the turn the finger makes about the white,
+         from the cue's heading when the drag began, so a finger moved round the white turns the cue a third as far. */
+      else { const w = g.balls.find(b => b.cue && !b.sunk);
+        if (w){ const fa = Math.atan2(w.z - z, w.x - x);
+          if (DRAG.f0 == null){ DRAG.f0 = fa; DRAG.a0 = g.ang; DRAG.fl = fa; DRAG.turn = 0; }
+          let df = fa - DRAG.fl; df -= 2 * Math.PI * Math.round(df / (2 * Math.PI)); DRAG.fl = fa; DRAG.turn += df;
+          g.ang = DRAG.a0 + TURN_GAIN * DRAG.turn; g.dirty = true; DRAG.cue = true; } }
       return true;
     },
     onPanEnd(){ if (ED.drag){ if (ED.drag.moved){ ED.ateAt = performance.now(); try { bbRefreshNow(); } catch {} } ED.drag = null; } if (DRAG && DRAG.rt){ ateAt = performance.now(); DRAG = null; return; } if (DRAG){ clearTimeout(HOLD_TM); if (DRAG.pull){ pullEnd(DRAG); DRAG = null; return; }
@@ -58466,7 +58509,7 @@ const TRICK_APP = (() => {
               makePuzzle, genOnce, runGen, trial, windowOf, GEN_LV, PUZ, JOBS, WK, workerSrc, plainOf, puzzleOf, goalFor, pump, puzzleSoon, levelAt, levelOf: (c, r) => levelAt(boardIdx(c, r)), ringOf,
               starsOf, roll, rotsOf, rotStart, FREEPLAY, CTL, ctlSync, nextBoardOf, DL, runSim, genRun,
               ed: () => ED, edOpen, edStart, edTap, edTile, edTiles, edCheck, edDone, edCancel, edView, draftOf, cleanMine, mineGoal, mineText, solveMine, solveSoon, MINE, mineAt, shareShot, takeShot, ED_TOOLS, ED_ACTS,
-              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), behind: v => { BEHIND_ON = !!v; }, rpGo, rpCan, RP_AIM, aimSight, aimSightAt, surePot, hopeOf, sightFor, SEE_EPS, pathItems, holdMs: v => { HOLD_MS = v; }, get ateIn(){ return ateAt - performance.now(); }, behindCue, wholeTable, get WHOLE(){ return WHOLE; } },
+              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), behind: v => { BEHIND_ON = !!v; }, rpGo, rpCan, RP_AIM, aimSight, aimSightAt, surePot, hopeOf, sightFor, SEE_EPS, pathItems, holdMs: v => { HOLD_MS = v; }, cutOf, get cutDeg(){ return CTL.cutDeg; }, get turnGain(){ return TURN_GAIN; }, get ateIn(){ return ateAt - performance.now(); }, behindCue, wholeTable, get WHOLE(){ return WHOLE; } },
   };
   SHARE.install(app, takeShot);
   /* THE MATCH GAMES' APPS (THE POOL GAMES, ONE TABLE, above): each is this app's own hooks with its entry's name, menu, titles and picture.

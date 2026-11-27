@@ -1542,3 +1542,14 @@ made for the second half: it stands beside bowling in the list where curling sto
 
 **Only the minimap's table see-through** (Nov 26: "Only the minimap background should be transparent"). `#tsMap` is no longer faded as a whole;
 its frame and cloth are drawn at `MAP_BG` (0.45), and the pockets, bumpers, balls and the aim line over them whole. Checked by a screenshot in 9-ball.
+
+**Two fingers are the view's, a slower cue, and the cut angle shown** (Nov 27: "The pull is being shown when two fingers pan the screen.   Don't do
+that.   Roatating the cue stick is to fast.   Show the angle between the cue stick and the target ball."). In trick shots and every game on its engine:
+- The first finger's press started the hold's timer (`HOLD_TM`), and a second finger landing did not stop it, so the velocity bar came up under a
+  two-finger pan. Fingers down are counted on the window (`downs`, in `ctlEnsure`); when a second lands the timer stops, a bar already up goes away
+  with the power as it was, and the press is let go (`DRAG = null`), so the field pans and the cue stays.
+- A drag turned the cue onto the line from the white to the finger, so near the white a small move swung it a long way. Now the cue turns by
+  `TURN_GAIN` (⅓) of the turn the finger makes about the white, from the heading it had when the drag began (`DRAG.f0`, `a0`, `turn`, unwrapped).
+- The cut angle (`cutOf`, `cutSync`, `#tsCut`): between the cue's line and the line from the ghost ball (where the white will touch the first ball
+  it meets) to that ball's middle, 0° full on, 90° a graze; worked out from the balls as they stand, cushions not followed, and shown beside that ball
+  while it is your shot. `_debug.cutOf`, `cutDeg`, `turnGain`.
