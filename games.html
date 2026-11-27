@@ -56345,13 +56345,18 @@ const TRICK_APP = (() => {
     const m = M() || MATCH.nine, idx = m.pre + idx0;      // (each game's are kept under its own keys)
     let R = RECS_N.get(idx); if (R){ RECS_N.delete(idx); RECS_N.set(idx, R); return R; }
     const now = performance.now(); if (now - nrAt > 12){ nrAt = now; nrUsed = 0; }
-    if (!force && nrUsed >= NINE_REC_MS) return null;
+    /* A BOARD STILL PLAYING OUT ITS RACK KEEPS THE FIELD AWAKE (Nov 27: "The background boards are not being played"): its rack is played out only
+       in the moments the board is asked for its pieces, NINE_REC_MS at a time, and a resting field (RESTING, _restDecide) asks once in half a second
+       while nothing on the boards changes, which a rack at rest does not: the boards stood at their racks for minutes. Each ask that leaves the
+       work unfinished wakes the field, so it is asked every frame until its rack is played. */
+    const wake = () => { try { window.fieldWake && window.fieldWake(); } catch {} return null; };
+    if (!force && nrUsed >= NINE_REC_MS) return wake();
     let J = NREC.get(idx); if (!J){ J = { gen: m.recGen ? m.recGen(idx0) : nineRecGen(idx0, m), at: now }; NREC.set(idx, J); if (NREC.size > 40) for (const [k, v] of NREC) if (now - v.at > 3000) NREC.delete(k); }
     J.at = now;
     let step; const t0 = performance.now();
     do { step = J.gen.next(); } while (!step.done && (force || performance.now() - t0 < NINE_REC_MS - nrUsed));
     nrUsed += performance.now() - t0;
-    if (!step.done) return null;
+    if (!step.done) return wake();
     NREC.delete(idx);
     const d = step.value; if (!d.s) return null;
     const s = thin(d.s, 60 / NINE_REC_HZ);
@@ -56365,7 +56370,7 @@ const TRICK_APP = (() => {
     if (NINE()) return nineRecSoon(idx, force);
     const own = NINE() ? null : MINE.get(idx), rk = NINE() ? 'n9:' + idx : own ? 'm' + idx + ':' + hashOf(own) : idx < CHALLENGES.length ? idx * 8 : pkey(idx, levelAt(idx));
     let R = RECS.get(rk); if (R){ RECS.delete(rk); RECS.set(rk, R); return R; }
-    const t = performance.now(); if (!force && t - recAt < 30) return null;
+    const t = performance.now(); if (!force && t - recAt < 30){ try { window.fieldWake && window.fieldWake(); } catch {} return null; }   // (asked again soon: A BOARD STILL PLAYING OUT ITS RACK…)
     const S = setupOf(idx, false, force); if (!S) return null;
     const d = demoShot(idx, S), o = d.shot, st = strikeOf(o.a * D, o.tip[0], o.tip[1], o.p, MU_TIP, o.el * D);
     const s = thin(S.ch && S.ch.sols ? runSim(S.B, S.ch.sols) : d.s || simulate(S.B, st.dir, st.speed, st.w, st.vy), 60 / REC_HZ);
