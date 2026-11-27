@@ -1553,3 +1553,11 @@ that.   Roatating the cue stick is to fast.   Show the angle between the cue sti
 - The cut angle (`cutOf`, `cutSync`, `#tsCut`): between the cue's line and the line from the ghost ball (where the white will touch the first ball
   it meets) to that ball's middle, 0° full on, 90° a graze; worked out from the balls as they stand, cushions not followed, and shown beside that ball
   while it is your shot. `_debug.cutOf`, `cutDeg`, `turnGain`.
+
+**The minimap turns the board** (Nov 27: "You should be able to rotate the board bu rotataing the minimap directly"). The pool games' minimap
+(`#tsMap`) took no touches; now it takes a finger (`pointer-events: auto`, `touch-action: none`). A drag on it turns the view about the place it looks
+at (`FIELD_WORLD.turnTo`) by the angle the finger has gone round the minimap's middle (`MAP_TURN` 1, unwrapped), so the board turns as the
+minimap turns under the finger; the cue keeps its aim, and the minimap, drawn turned as the board, follows. The field's own pan is kept off it
+(`overChrome` now names `#tsMap`, a change to the field's shared check). Checked by a probe in 9-ball behind the white: a real mouse drag of a
+quarter turn clockwise round the minimap turned the table's long axis on the screen by 82–83° the same way (the tilted view foreshortens it), the
+cue's aim unchanged, no page error. Not checked on a phone's touch, nor in the other pool games beyond sharing the code.
