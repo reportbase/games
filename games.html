@@ -67389,58 +67389,54 @@ document.getElementById('bApp')?.addEventListener('click', e => { e.stopPropagat
    gentle glide on release; the wheel turns it slowly. When every chip fits,
    there is no window to bound and they sit in one even row, centred.
    The one difference: only the chips the current game shows are on the
-   ring, and it re-lays whenever that set changes. */
-const RING_BOMA = {
-  PSI: 2 / Math.PI,
-  project(index, angle, size, itemExtent){
-    const extent = size * itemExtent * RING_BOMA.PSI;
-    return ((Math.tan(angle + index * Math.PI / size) + 1) * 0.5) * extent - extent * 0.5;
-  },
-  normalizeAngle(a){ return ((a % Math.PI) + Math.PI) % Math.PI; },
-  angleDelta(a, b){ let d = (a - b) % Math.PI; if (d > Math.PI / 2) d -= Math.PI; if (d < -Math.PI / 2) d += Math.PI; return d; },
-  realDimension(focusAngle, N, aperture){
-    if (N <= 0) return [];
-    const inc = Math.PI / N, s0 = Math.floor((Math.atan(-aperture) - focusAngle) / inc), s1 = Math.ceil((Math.atan(aperture) - focusAngle) / inc), out = [];
-    for (let i = s0; i <= s1; i++) out.push(((i % N) + N) % N);
-    return out;
-  },
-};
-const RING_THROW_MS = 140, RING_FRICTION = 0.88, RING_V_MAX = 0.055, RING_V_MIN = 0.0012, WHEEL_SPIN_GAIN = 0.3;
+   ring, and it re-lays whenever that set changes.
+   (Since Nov 27 the maths is not boma's: the ring is read from one vantage, below.) */
+/* THE RING READ FROM ONE VANTAGE (Nov 27: "Use this in the games bar", of wander's ring.html, after "This uses arctan, so
+   it's not fully shv" and "Let's see if we can create a true shv version of the ring.  It should work with any array,  the
+   array is the payload."). Boma's tan of equal turns (an angle, π, a ring that closes) is gone. The ring holds a focus f, a
+   place among the chips counted in chips; chip k is read by the slope s = d/H, d its count from the focus (the nearer way
+   round: the wrap is a count mod n, not a turn), H the thumb, as many chips as fit full size in half the bar; and it lies at
+   x = s/(1 + |s|) of the half bar: fractions only, no angle, no π, no square root. H is set so the focus's neighbours are a
+   pitch apart (half/(H + 1) = the pitch); the H chips either side of the focus have half the bar (the near field); past them they bunch toward the ends, the horizon, and shrink with the
+   room they have (supersedes Sep 27's "the lens spaces; it does not scale": a chip with a pixel of room cannot keep its
+   size). A drag keeps the chip under the finger under it, f = i₀ − H·s(x); the wheel moves the focus by its pixels over
+   the pitch. */
+const RING_LINE = { x: s => s / (1 + (s < 0 ? -s : s)), s: x => x / (1 - (x < 0 ? -x : x)) };
+const RING_THROW_MS = 140, RING_FRICTION = 0.88, RING_V_MAX = 1.2, RING_V_MIN = 0.004, WHEEL_SPIN_GAIN = 0.3;
 function makeRing(strip){
   if (!strip) return null;
   const GAP = 16;
-  let angle = 0, raf = 0, vel = 0, spin = null, _item = 0;
+  let f = 0, raf = 0, vel = 0, spin = null, _item = 0, geo = null;
   const items = () => Array.prototype.filter.call(strip.children, b => b.classList.contains('chip') && !b.hidden);
   const itemExtent = () => { if (_item) return _item; let w = 0; for (const b of items()) if (b.offsetWidth > w) w = b.offsetWidth; return (_item = (w || 40) + GAP); };
-  const virtualWidth = () => items().length * itemExtent() * RING_BOMA.PSI;
-  const pixelsToAngle = (px, vw) => (px / Math.max(1, vw)) * Math.PI;
+  const wrapF = n => { if (n > 0){ f = f % n; if (f < 0) f += n; } };
+  const sAt = px => { if (!geo) return 0; let x = (px - geo.mid) / geo.half; x = x > 0.995 ? 0.995 : x < -0.995 ? -0.995 : x; return RING_LINE.s(x); };
   function layout(){
     const btns = items(), n = btns.length;
     // THE BAND TAKES THE POINTER ONLY WHILE IT IS A FISHEYE (Sep 27): then a touch, drag or wheel anywhere
     // along it turns the ring and none of it reaches the view behind. A flat row — or an empty bar — has
     // nothing to turn, so between its chips the view gets its gestures as usual.
-    strip.style.pointerEvents = '';
+    strip.style.pointerEvents = ''; geo = null;
     if (!n) return;
-    const W = strip.clientWidth || 600, half = W / 2, ITEM = itemExtent(), vw = n * ITEM * RING_BOMA.PSI;
+    const W = strip.clientWidth || 600, ITEM = itemExtent();
     const chipW = Math.max(8, ITEM - GAP), pitch = Math.min(ITEM, W / n);
     if (pitch >= chipW + 5){                                   // everything fits: one even row, centred
-      angle = 0;
+      f = 0;
       const x0 = (W - n * pitch) / 2 + pitch / 2;
-      btns.forEach((b, i) => { b.style.display = ''; b.style.left = (x0 + i * pitch) + 'px'; b.style.zIndex = '100'; });
+      btns.forEach((b, i) => { b.style.display = ''; b.style.scale = ''; b.style.left = (x0 + i * pitch) + 'px'; b.style.zIndex = '100'; });
       return;
     }
     strip.style.pointerEvents = 'auto';
-    const aperture = Math.min(1, (W + 4 * ITEM) / vw), best = {};
-    for (const i of RING_BOMA.realDimension(angle, n, aperture)){
-      const pos = RING_BOMA.project(i, angle, n, ITEM);
-      if (!isFinite(pos)) continue;
-      if (!(i in best) || Math.abs(pos) < Math.abs(best[i])) best[i] = pos;
-    }
-    btns.forEach((b, i) => {
-      const ix = best[i], x = ix == null ? null : ix + half;
-      if (x == null || x < -ITEM || x > W + ITEM){ b.style.display = 'none'; return; }
-      b.style.display = ''; b.style.left = x + 'px';
-      b.style.zIndex = String(100 - Math.round(Math.min(1, Math.abs(ix) / half) * 60));
+    wrapF(n);
+    const mid = W / 2, half = Math.max(ITEM, W / 2 - chipW / 2), H = Math.max(1, half / ITEM - 1);   // the focus's neighbours a pitch apart: half/(H + 1) = ITEM
+    geo = { mid, half, H, n };
+    const X = d => RING_LINE.x(d / H) * half;
+    btns.forEach((b, k) => {
+      let d = k - f; d -= Math.round(d / n) * n;               // the nearer way round: a count mod n
+      const x = X(d), room = Math.min(X(d + 1) - x, x - X(d - 1)), sc = Math.min(1, room / (chipW + 4));
+      if (sc < 0.15){ b.style.display = 'none'; b.style.scale = ''; return; }
+      b.style.display = ''; b.style.left = (mid + x) + 'px'; b.style.scale = sc < 0.999 ? String(sc) : '';
+      b.style.zIndex = String(40 + Math.round(sc * 60));
     });
   }
   const stop = () => { if (raf){ cancelAnimationFrame(raf); raf = 0; } vel = 0; };
@@ -67448,14 +67444,14 @@ function makeRing(strip){
     stop();
     vel = Math.max(-RING_V_MAX, Math.min(RING_V_MAX, v || 0));
     if (!isFinite(vel) || Math.abs(vel) < RING_V_MIN){ vel = 0; return; }
-    const step = () => { angle = RING_BOMA.normalizeAngle(angle + vel); layout(); vel *= RING_FRICTION;
+    const step = () => { f += vel; layout(); vel *= RING_FRICTION;
       if (Math.abs(vel) < RING_V_MIN){ raf = 0; vel = 0; return; } raf = requestAnimationFrame(step); };
     raf = requestAnimationFrame(step);
   };
   strip.addEventListener('pointerdown', e => {
     stop();
     if (e.button !== 0) return;
-    spin = { x: e.clientX, start: angle, id: e.pointerId, active: false, t: performance.now(), a: angle, v: 0 };
+    spin = { x: e.clientX, i0: f + (geo ? geo.H * sAt(e.clientX) : 0), id: e.pointerId, active: false, t: performance.now(), a: f, v: 0 };
   });
   window.addEventListener('pointermove', e => {
     if (!spin || e.pointerId !== spin.id) return;
@@ -67468,9 +67464,9 @@ function makeRing(strip){
       try { strip.setPointerCapture(spin.id); } catch (_) {}
       strip.classList.add('grabbing');
     }
-    angle = RING_BOMA.normalizeAngle(spin.start + pixelsToAngle(dx, virtualWidth()));
-    const now = performance.now(), dtv = Math.max(1, now - spin.t), inst = (RING_BOMA.angleDelta(angle, spin.a) / dtv) * 16;
-    spin.v = spin.v * 0.4 + inst * 0.6; spin.t = now; spin.a = angle; spin.moved = now;
+    if (geo){ f = spin.i0 - geo.H * sAt(e.clientX); let dv = f - spin.a; dv -= Math.round(dv / geo.n) * geo.n;
+      const now = performance.now(), dtv = Math.max(1, now - spin.t), inst = (dv / dtv) * 16;
+      spin.v = spin.v * 0.4 + inst * 0.6; spin.t = now; spin.a = f; spin.moved = now; }
     layout();
     e.preventDefault();
   });
@@ -67495,7 +67491,7 @@ function makeRing(strip){
     const px = (Math.abs(dx) > Math.abs(dy) ? dx : dy) * WHEEL_SPIN_GAIN;
     if (!px || items().length * itemExtent() <= strip.clientWidth) return;
     e.preventDefault(); e.stopPropagation(); stop();
-    angle = RING_BOMA.normalizeAngle(angle - pixelsToAngle(px, virtualWidth()));
+    f += px / itemExtent();
     layout();
   }, { passive: false });
   // Re-lay whenever the strip's width changes, and whenever the game changes which chips it shows.
@@ -67504,7 +67500,7 @@ function makeRing(strip){
   new MutationObserver(() => { _item = 0; layout(); }).observe(strip, { subtree: false, childList: true, attributes: true, attributeFilter: ['hidden'] , attributeOldValue: false });
   for (const b of strip.children) new MutationObserver(() => { _item = 0; layout(); }).observe(b, { attributes: true, attributeFilter: ['hidden'] });
   requestAnimationFrame(() => { _item = 0; layout(); });
-  return { layout, get angle(){ return angle; }, get shown(){ return items().filter(b => b.style.display !== 'none').length; } };
+  return { layout, get focus(){ return f; }, get geo(){ return geo; }, get shown(){ return items().filter(b => b.style.display !== 'none').length; } };
 }
 window.__gameRing = makeRing(document.getElementById('gameBar'));
 

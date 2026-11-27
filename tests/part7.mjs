@@ -192,10 +192,11 @@ try {
       return { shut: document.body.classList.contains('bb-collapsed'), shown: C.length > 0 && rs.every(r => r.height > 0), atBottom: innerHeight - lo <= 24, words: C.some(c => /[A-Za-z]/.test(c.innerText)), n: C.length, oneRow: new Set(rs.map(r => Math.round(r.top))).size === 1 }; });   // (the dots are away when the row has nothing: the block builder puts nothing there now)
     const row0 = await row(), padKeys = await page.evaluate(() => [...document.querySelectorAll('#playPad button')].map(b => b.dataset.key).join());
     // (Nov 26: "It should still use the fisheye wrap around.": on a screen 150px wide the games toolbar's ring takes over: the chips on one line,
-    //  fewer of them shown at once, the strip taking the drag that turns it)
+    //  fewer of them shown at once, the strip taking the drag that turns it; since Nov 27, "Use this in the games bar", the ring read from one
+    //  vantage: the chips shrink toward the ends, so one line is their centres, and they are not all one size)
     const vp = page.viewportSize(); await page.setViewportSize({ width: 150, height: vp.height }); await drawn(page, 400);
     const wrap = await page.evaluate(() => { const g = document.getElementById('gameBar'), C = [...g.querySelectorAll(':scope > .tchip')].filter(c => c.style.display !== 'none'), rs = C.map(c => c.getBoundingClientRect());
-      return g.style.pointerEvents === 'auto' && C.length < 4 && C.length > 0 && rs.every(r => r.left >= -24 && r.right <= innerWidth + 24) && new Set(rs.map(r => Math.round(r.top))).size === 1; });
+      return g.style.pointerEvents === 'auto' && C.length < 4 && C.length > 0 && rs.every(r => r.left >= -24 && r.right <= innerWidth + 24) && rs.every(r => Math.abs((r.top + r.bottom) / 2 - (rs[0].top + rs[0].bottom) / 2) < 2) && rs.some(r => r.width < rs[0].width - 1 || r.width > rs[0].width + 1); });
     await page.setViewportSize(vp); await drawn(page, 400); await page.evaluate(() => window.__settle && window.__settle());
     await tile('Set blue'); await drawn(page, 300);
     const t1 = await gs(), row1 = await row();
