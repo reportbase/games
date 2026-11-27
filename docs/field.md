@@ -663,3 +663,11 @@ to run the tests, was committed with #274: `.gitignore`'s `node_modules/` (with 
 Jekyll build then failed on every push ("No such file or directory … /github/workspace/node_modules"), so the live page stayed at the
 version before #274 (no tool chips in the ring, no single-vantage ring). The symlink is removed and the rule is `node_modules`, which
 matches both.
+
+**The ring only when the buttons do not fit** (Nov 27: "use the ring in air raid and block builder, if the button widths are greater
+than the screen width."). `makeRing`'s `layout()` now measures the chips' own widths: if their sum, with a gap of 4 px between and at
+each end, fits the bar, they stand in one centred row at their own widths (the gap growing to 16 px where there is room, each chip
+centred by `marginLeft = −w/2`, so chips of any width line up); only past that is the bar the ring. Before, the test was the widest
+chip plus 16 px times the count, so the ring came on while the row would still have fitted. Drag and wheel spin only while it is
+the ring (`flat()`). Measured: Air raid's nine chips (40 px) a row down to 392 px of bar and the ring at 300 and 200; the block
+builder's four a row at 400 and the ring at 150 (part 7's wrap check, unchanged).

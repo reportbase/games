@@ -67405,8 +67405,10 @@ const RING_LINE = { x: s => s / (1 + (s < 0 ? -s : s)), s: x => x / (1 - (x < 0 
 const RING_THROW_MS = 140, RING_FRICTION = 0.88, RING_V_MAX = 1.2, RING_V_MIN = 0.004, WHEEL_SPIN_GAIN = 0.3;
 function makeRing(strip){
   if (!strip) return null;
-  const GAP = 16;
+  const GAP = 16, RING_GAP_MIN = 4;
   let f = 0, raf = 0, vel = 0, spin = null, _item = 0, geo = null;
+  const fits = (sum, n, W) => sum + (n - 1) * RING_GAP_MIN <= W - 2 * RING_GAP_MIN;
+  const flat = () => !geo;   // laid as a row: nothing to spin to
   const items = () => Array.prototype.filter.call(strip.children, b => b.classList.contains('chip') && !b.hidden);
   const itemExtent = () => { if (_item) return _item; let w = 0; for (const b of items()) if (b.offsetWidth > w) w = b.offsetWidth; return (_item = (w || 40) + GAP); };
   const wrapF = n => { if (n > 0){ f = f % n; if (f < 0) f += n; } };
@@ -67419,13 +67421,20 @@ function makeRing(strip){
     strip.style.pointerEvents = ''; geo = null;
     if (!n) return;
     const W = strip.clientWidth || 600, ITEM = itemExtent();
-    const chipW = Math.max(8, ITEM - GAP), pitch = Math.min(ITEM, W / n);
-    if (pitch >= chipW + 5){                                   // everything fits: one even row, centred
+    const chipW = Math.max(8, ITEM - GAP);
+    // THE RING ONLY WHEN THE BUTTONS ARE WIDER THAN THE SCREEN (Nov 27: "use the ring in air raid and block builder, if the
+    // button widths are greater than the screen width."): the chips' own widths, side by side with the least gap, against
+    // the bar's width. While they fit they stand in one even row, centred, each at its own width; only past that the ring.
+    btns.forEach(b => { b.style.display = ''; b.style.scale = ''; });
+    const ws = btns.map(b => b.offsetWidth || 40), sum = ws.reduce((a, w) => a + w, 0);
+    if (fits(sum, n, W)){
       f = 0;
-      const x0 = (W - n * pitch) / 2 + pitch / 2;
-      btns.forEach((b, i) => { b.style.display = ''; b.style.scale = ''; b.style.left = (x0 + i * pitch) + 'px'; b.style.zIndex = '100'; });
+      const g = Math.max(RING_GAP_MIN, Math.min(GAP, (W - sum) / (n + 1))), total = sum + (n - 1) * g;
+      let x = (W - total) / 2;
+      btns.forEach((b, i) => { b.style.left = (x + ws[i] / 2) + 'px'; b.style.marginLeft = (-ws[i] / 2) + 'px'; b.style.zIndex = '100'; x += ws[i] + g; });
       return;
     }
+    btns.forEach(b => { b.style.marginLeft = ''; });
     strip.style.pointerEvents = 'auto';
     wrapF(n);
     const mid = W / 2, half = Math.max(ITEM, W / 2 - chipW / 2), H = Math.max(1, half / ITEM - 1);   // the focus's neighbours a pitch apart: half/(H + 1) = ITEM
@@ -67459,7 +67468,7 @@ function makeRing(strip){
     const dx = e.clientX - spin.x;
     if (!spin.active){
       if (Math.abs(dx) < 4) return;
-      if (items().length * itemExtent() <= strip.clientWidth){ spin = null; return; }   // a flat row has nothing to spin to
+      if (flat()){ spin = null; return; }   // a flat row has nothing to spin to
       spin.active = true;
       try { strip.setPointerCapture(spin.id); } catch (_) {}
       strip.classList.add('grabbing');
@@ -67489,7 +67498,7 @@ function makeRing(strip){
   strip.addEventListener('wheel', e => {
     const u = ({ 0: 1, 1: 16, 2: 100 })[e.deltaMode] || 1, dx = e.deltaX * u, dy = e.deltaY * u;
     const px = (Math.abs(dx) > Math.abs(dy) ? dx : dy) * WHEEL_SPIN_GAIN;
-    if (!px || items().length * itemExtent() <= strip.clientWidth) return;
+    if (!px || flat()) return;
     e.preventDefault(); e.stopPropagation(); stop();
     f += px / itemExtent();
     layout();
