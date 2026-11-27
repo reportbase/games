@@ -637,3 +637,18 @@ that turns by a drag or the wheel when they do not. `toolBarTick` touches only i
 else only their faces), so Air raid's static chips are left as they are; Air raid still shows its own (it has no `toolTiles`). Part 7's block
 builder check reads and clicks `#gameBar > .tchip` for real: four chips on one row at the bottom, no words, the chosen one pressed, and on a
 screen 150px wide the ring in fisheye (the strip taking the drag, fewer chips shown, one row, inside the screen); passing.
+
+**The games toolbar's ring, read from one vantage** (Nov 27: "Use this in the games bar", of wander's `ring.html`, after "This is k not n in
+action", "This uses arctan, so it's not fully shv" and "Let's see if we can create a true shv version of the ring."). `makeRing`'s maths was
+boma's: N chips at equal turns, `tan` of each, a window kept by `atan`, the ring closing on itself, the Cauchy's flat middle in the dual
+vantage's terms (wander essays 17 §2, 27 §5). `RING_BOMA` is gone. The ring holds a focus `f`, a place among the chips counted in chips; chip k
+is read by the slope s = d/H, d its count from the focus the nearer way round (the wrap a count mod n, not a turn), and lies at
+x = s/(1 + |s|) of the half bar (`RING_LINE`): fractions only, no angle, no π, no square root. H is set so the focus's neighbours are a pitch
+apart (half/(H + 1) = the pitch). Past the focus the chips bunch toward the ends, the horizon, and shrink with the room they have (CSS `scale`,
+the nearer neighbour's gap over a chip and 4px; hidden under 0.15). That supersedes Sep 27's "the lens spaces; it does not scale": a chip with a
+pixel of room cannot keep its size. A drag keeps the chip under the finger under it (f = i₀ − H·s(x)), a throw glides in chips a frame, the
+wheel moves the focus by its pixels over the pitch. When every chip fits, the even row as before. `__gameRing` gives `focus` and `geo` (the
+`angle` it gave is gone; nothing read it). Probed in headless Chromium: Air raid's nine weapons in an even row at 1200px; at 360px the focus
+full size, its neighbours 0.61, the far ones 0.17, the item under a real drag staying under the pointer to 10⁻⁷; at 240px and the block
+builder at 150px some chips hidden at the ends, no page errors. Part 7's block builder check read "one row" from the chips' tops; with chips of
+several sizes it now reads their centres, and asks that they are not all one size; passing. Looked at in a screenshot.
