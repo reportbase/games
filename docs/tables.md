@@ -1571,3 +1571,12 @@ played; trick shots' boards do the same while their recordings wait their turn (
 boards asked in turn every 20 ms, the field woken on every unfinished ask (none on main), and their racks played as on main (the first after 8–13
 rounds, four to six of six by 80). Not seen on a device: headless drawing is about one frame a second, too slow for the field ever to rest, so the
 rest itself was not reproduced here. Tried and taken out: finishing one board's rack before starting the next (no faster in the probe).
+
+**A board no one plays shows one shot, not a rack** (Nov 27: "Still not playing.   You can simplify the game play to reduce the load on background
+board if that helps"). After the wake above the boards still stood: each one's recording was a whole rack, up to `recShots` shots (60 in the rack
+games, 30 to 60 in the others) each chosen by the computer's search, worked out 8 ms at a time. Now `nineRecGen` stops after `BG_SHOTS` (1): the
+break, which needs no search, in the games that break; the first planned shot in three-cushion, bowling and bumper pool; played over and over as
+before (`R.cycle`), and no plan is made after the last shot. Measured in the headless probe, the work for a board's recording (four boards each):
+9-ball 0.23–0.41 s → 0–14 ms, 8-ball 0.40–0.73 s → 0–28 ms, straight pool 1.5–1.7 s → 1–17 ms, one-pocket 0.6–0.9 s → 0–24 ms, bank pool
+0.9–1.6 s → 7–9 ms, three-cushion 2.6–2.9 s → 61–79 ms, bowling 0.58–0.89 s → 51–117 ms, bumper pool 2.4–3.7 s → 59–137 ms; a recording now
+2.6–5.8 s long, against 37 s to 4 minutes. Pool hockey's (its own `recGen`) is unchanged. Not seen on a device.
