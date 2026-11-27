@@ -652,3 +652,8 @@ wheel moves the focus by its pixels over the pitch. When every chip fits, the ev
 full size, its neighbours 0.61, the far ones 0.17, the item under a real drag staying under the pointer to 10⁻⁷; at 240px and the block
 builder at 150px some chips hidden at the ends, no page errors. Part 7's block builder check read "one row" from the chips' tops; with chips of
 several sizes it now reads their centres, and asks that they are not all one size; passing. Looked at in a screenshot.
+
+**Where the ring is written up** (Nov 27: "Update demos and games and merge"). The ring read from one vantage is wander's `ring.html`
+turned into the games bar; wander records it as a working case of K, not N (*Reads and Writes* §6, "K and N"; essay 16 §10, "A bar
+of tools"), the bar's first form as the dual vantage's way of placing the same chips (essay 27 §5), and the Cauchy no line of the
+code named (essay 17 §2). The demo: https://reportbase.github.io/wander/ring.html.

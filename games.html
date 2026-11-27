@@ -67400,7 +67400,7 @@ document.getElementById('bApp')?.addEventListener('click', e => { e.stopPropagat
    pitch apart (half/(H + 1) = the pitch); the H chips either side of the focus have half the bar (the near field); past them they bunch toward the ends, the horizon, and shrink with the
    room they have (supersedes Sep 27's "the lens spaces; it does not scale": a chip with a pixel of room cannot keep its
    size). A drag keeps the chip under the finger under it, f = i₀ − H·s(x); the wheel moves the focus by its pixels over
-   the pitch. */
+   the pitch. The demo: wander's ring.html; written up in wander's Reads and Writes §6 and essay 16 §10. */
 const RING_LINE = { x: s => s / (1 + (s < 0 ? -s : s)), s: x => x / (1 - (x < 0 ? -x : x)) };
 const RING_THROW_MS = 140, RING_FRICTION = 0.88, RING_V_MAX = 1.2, RING_V_MIN = 0.004, WHEEL_SPIN_GAIN = 0.3;
 function makeRing(strip){
