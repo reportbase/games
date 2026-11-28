@@ -681,3 +681,13 @@ keeps the heading under the finger under it (`_turnViewTo`, f = i₀ + H·s(x)),
 The compass tape (`#compass`), which said the same headings in the same place, is off by default (`COMPASS.on`), its toggle kept. Checked by a
 probe at 1280 px: 11 marks shown, N gold at the start; a real 60 px drag to the right turned the view 38° and put 45 in the middle; no page error.
 Not run: the smoke test's part 1 "rails" check, which looks for the compass marks and the old rail's shape and will want changing.
+
+**The tilt is a ring under the turn ring, and both speak up** (Nov 28: "Increase the font size.   Move the tilt underneath the rotation and convert
+it to you", read as "to a ring"). The tilt rail on the left edge (`#tiltZone`) now stands across the top under the turn ring, the same width
+(`min(320px, 70vw)`), its line, nubs and readout put away; its tilts every `TILT_STEP` (5°) are laid as the turn's headings are (`yawRingGeo`,
+`RING_LINE`), a larger tilt to the right, the one the view is at gold in the middle, only the tilts the view can take shown (the floor,
+`_pitchFloor`, to `PITCH_MAX`), no wrap. A drag keeps the tilt under the finger under it, through the tilt lever as before (`__tiltLever`, at once
+while held, saved on arrival), within the floor and `PITCH_MAX`. Both rings' marks are 0.875rem (were 0.6875), `item` 40 px (was 30), each ring
+34 px tall. Checked by a probe at 1280 px: 40° to 70° shown about 55° gold; a real 40 px drag to the left took the tilt to 59.2°, 60° gold; a
+screenshot shows the two rings, one under the other; no page error. The smoke test's tilt checks (part 1 "rails", part 6 "tilt nub grab") look
+for the old rail and were not run.
