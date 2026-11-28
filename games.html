@@ -1196,7 +1196,7 @@
   /* THE RAIL PACKED IN THE MIDDLE TOO (Nov 2: "the scroll bar should be similarly compressed.", after the compass's angles were): the turn rail is a
      short strip centred on the top edge, 240px or 60% of the width on a narrow screen, not the whole top. Its width is still one full turn
      (−180° at the left end, +180° at the right), so a drag turns the view faster per pixel than it did across the screen. */
-  #yawZone { top: 0; left: 50%; width: min(240px, 60vw); margin-left: calc(min(240px, 60vw) / -2); height: min(32px, 5.25vw); z-index: 5;
+  #yawZone { top: 0; left: 50%; width: min(320px, 70vw); margin-left: calc(min(320px, 70vw) / -2); height: 30px; z-index: 5;
              cursor: ew-resize; touch-action: none;
              background: transparent !important; border: none !important;
              border-radius: 0; backdrop-filter: none !important;
@@ -1208,6 +1208,14 @@
   #yawZone:hover::before, #yawZone.dragging::before {
              opacity: .95; }
   #yawZone .strip-mark { top: 0; width: 8px; height: 20px; }
+  /* THE TURN RAIL IS A RING (Nov 28: "The rotation bar on top should is the ring instead of a scroll bar"): the line and its nubs are put away; the
+     headings every `YAW_STEP` degrees stand on it as the games bar's chips do (`makeRing`'s layout, read from one vantage), the one the view faces in
+     the middle, gold. */
+  #yawZone::before, #yawZone .strip-mark { display: none !important; }
+  #yawZone .ym { position: absolute; top: 4px; transform-origin: 50% 0; translate: -50% 0; font: 700 0.6875rem/1 var(--ui-sans, system-ui, sans-serif);
+                 color: rgba(190,208,222,.9); text-shadow: 0 1px 3px rgba(4,6,10,.9); white-space: nowrap; font-variant-numeric: tabular-nums; pointer-events: none; }
+  #yawZone .ym::after { content: ''; display: block; width: 1px; height: 7px; margin: 3px auto 0; background: currentColor; opacity: .7; }
+  #yawZone .ym.on { color: var(--hot); }
   /* SQUARE WHERE THEY MEET THE SCREEN (Sep 25: "the nubs should be squared
      on the screen side"): each nub sits flush against its edge, square
      there, and rounded only on the side facing into the view. */
@@ -18189,7 +18197,7 @@ window.__stereoFwdNdc = function(ndc){
    horizon. Each mark is an eye-level point far away on its azimuth — eye
    level IS the true horizon, so the marks sit just over the field's edge and
    slide with yaw, rise and fall with pitch, and warp with the projection. */
-const COMPASS = { on: true };
+const COMPASS = { on: false };   // (off since Nov 28: the turn ring along the top says the headings now, where this tape stood)
 const COMPASS_SPREAD = 0.28;               // how far from the middle the marks go, of where they fall (Nov 2: packed in the centre)
 const _CARDINAL = { 0: 'N', 90: 'E', 180: 'S', 270: 'W' };
 const _compassEl = (() => {
@@ -18206,6 +18214,7 @@ const _compassEl = (() => {
     s.dataset.a = a;
     el.appendChild(s);
   }
+  el.hidden = !COMPASS.on;
   document.body.appendChild(el);
   return el;
 })();
@@ -71829,8 +71838,10 @@ window.PINCH_PITCH_OFF = true;
         engaged = true; startYaw = st.yaw || 0; startX = e.clientX;
         _yawLever.on = false; _yawLever.active = false;
       }
-      const rect = z.getBoundingClientRect();
-      const y = startYaw + (e.clientX - startX) / Math.max(1, rect.width) * 360;
+      // (the ring, Nov 28: the heading under the finger stays under it, f = i₀ + H·s(x), f the view's heading in marks; one way round
+      //  the ring, as the rail did, without an end)
+      const R = yawRingGeo(z), sx = px => { let t = (px - z.getBoundingClientRect().left - R.mid) / R.half; t = t > 0.995 ? 0.995 : t < -0.995 ? -0.995 : t; return RING_LINE.s(t); };
+      const y = YAW_STEP * (startYaw / YAW_STEP - R.H * sx(startX) + R.H * sx(e.clientX));
       _turnViewTo(((y % 360) + 540) % 360 - 180);
       e.preventDefault();
     });
@@ -71841,6 +71852,10 @@ window.PINCH_PITCH_OFF = true;
     addEventListener('blur', () => end());
   }
 }
+/* THE TURN RING'S MEASURES (Nov 28): a mark every YAW_STEP degrees; `item` the room a mark wants; H, the thumb, set so the marks either side of
+   the middle are an item apart, half/(H + 1) = item, as the games bar's ring sets its own. */
+const YAW_STEP = 15;
+function yawRingGeo(z){ const W = z.clientWidth || 320, item = 30, half = Math.max(item, W / 2 - item / 2); return { mid: W / 2, half, item, H: Math.max(1, half / item - 1) }; }
 // Turn the view to a heading, round the ground point the camera is looking at.
 function _turnViewTo(yawDeg){
   const back = camGeom().back, y0 = (st.yaw || 0) * Math.PI / 180;
@@ -71966,12 +71981,18 @@ function updateStripMarkers(dt){
       _turnViewTo(cur + Math.sign(gap) * step);
       if (Math.abs(yl.target - norm(st.yaw)) < 0.05){ _turnViewTo(yl.target); if (!yl.on) yl.active = false; }
     }
-    const W = yz.clientWidth - 8;
-    const xAt = a => (EdgeGauge.yawToFrac(a) * W).toFixed(1) + 'px';
-    M.yaw.style.left = xAt(st.yaw);
-    M.yawZero.style.left = (W / 2 + 3).toFixed(1) + 'px';
-    M.yawTgt.style.display = (yl && yl.active) ? '' : 'none';
-    if (yl && yl.active) M.yawTgt.style.left = xAt(yl.target);
+    // the ring: heading k·YAW_STEP at d = (its heading − the view's)/YAW_STEP marks from the middle, the nearer way round, laid at
+    // x = −s/(1 + |s|) of the half bar, s = d/H (a larger heading to the left, as the compass tape and the view have it)
+    if (!M.ym){ M.ym = []; for (let a = 0; a < 360; a += YAW_STEP){ const el = document.createElement('div'); el.className = 'ym'; el.dataset.a = a;
+      el.textContent = a === 0 ? 'N' : a === 90 ? 'E' : a === 180 ? 'S' : a === 270 ? 'W' : String(a); yz.appendChild(el); M.ym.push(el); } }
+    const R = yawRingGeo(yz), n = M.ym.length;
+    for (const el of M.ym){
+      let d = (+el.dataset.a - (st.yaw || 0)) / YAW_STEP; d -= Math.round(d / n) * n;
+      const X = t => RING_LINE.x(t / R.H) * R.half, x = -X(d), room = Math.min(Math.abs(X(d + 1) - X(d)), Math.abs(X(d) - X(d - 1))), sc = Math.min(1, room / R.item);
+      if (sc < 0.2){ el.style.display = 'none'; continue; }
+      el.style.display = ''; el.style.left = (R.mid + x).toFixed(1) + 'px'; el.style.scale = sc < 0.999 ? sc.toFixed(3) : ''; el.style.opacity = (0.35 + 0.65 * sc).toFixed(2);
+      el.classList.toggle('on', Math.abs(d) < 0.5);
+    }
   }
   // tilt: floor at the top, 60° at the bottom (a downward pan raises pitch).
   // The travel is the dial's tangent curve, not an exponential ease: speed

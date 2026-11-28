@@ -671,3 +671,13 @@ centred by `marginLeft = −w/2`, so chips of any width line up); only past that
 chip plus 16 px times the count, so the ring came on while the row would still have fitted. Drag and wheel spin only while it is
 the ring (`flat()`). Measured: Air raid's nine chips (40 px) a row down to 392 px of bar and the ring at 300 and 200; the block
 builder's four a row at 400 and the ring at 150 (part 7's wrap check, unchanged).
+
+**The turn rail is a ring** (Nov 28: "The rotation bar on top should is the ring instead of a scroll bar"). `#yawZone` along the top was a line
+with a nub, one full turn from end to end. Its line and nubs are put away, and the headings every `YAW_STEP` (15°) stand on it as the games bar's
+chips do, laid by the same single-vantage ring (`RING_LINE`, `yawRingGeo`: mark k at d = its heading less the view's in marks, the nearer way
+round, at x = −s/(1 + |s|) of the half bar, s = d/H, H set so the marks beside the middle are 30 px apart). The heading the view faces is gold in
+the middle (N, E, S, W at the cardinals), the rest shrink toward the ends; a larger heading stands to the left, as the compass tape had it. A drag
+keeps the heading under the finger under it (`_turnViewTo`, f = i₀ + H·s(x)), round and round with no end. The bar is wider, `min(320px, 70vw)`.
+The compass tape (`#compass`), which said the same headings in the same place, is off by default (`COMPASS.on`), its toggle kept. Checked by a
+probe at 1280 px: 11 marks shown, N gold at the start; a real 60 px drag to the right turned the view 38° and put 45 in the middle; no page error.
+Not run: the smoke test's part 1 "rails" check, which looks for the compass marks and the old rail's shape and will want changing.
