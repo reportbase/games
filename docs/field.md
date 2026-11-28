@@ -691,3 +691,10 @@ while held, saved on arrival), within the floor and `PITCH_MAX`. Both rings' mar
 34 px tall. Checked by a probe at 1280 px: 40° to 70° shown about 55° gold; a real 40 px drag to the left took the tilt to 59.2°, 60° gold; a
 screenshot shows the two rings, one under the other; no page error. The smoke test's tilt checks (part 1 "rails", part 6 "tilt nub grab") look
 for the old rail and were not run.
+
+**The rings larger, and gray while held** (Nov 28: "Increase font size, when panning the ring, set the background to transparent gray"). The turn
+and tilt rings' marks are 1.125rem (were 0.875), each mark given 50 px (`yawRingGeo`'s `item`, was 40), the rings `min(360px, 80vw)` wide and
+42 px tall, the tilt ring under the turn ring at 42 px. A ring held by a finger or the mouse (`.dragging`, set on the press and taken off on the
+release) is backed in a see-through gray, rgba(96, 96, 100, .62), with rounded corners. Checked by a probe: the class on and off with the press and
+the release; screenshots with it on show the gray band behind the ring (a first gray, .38 of a middle gray, darkened the light boards under it by
+only 7%, too faint to see, so it was made deeper); no page error.
