@@ -1116,8 +1116,8 @@
      readout."): a short strip centred on the left edge, 240px or 60% of the height on a short screen, as the turn rail is across the top; the
      tilt still runs from the floor at its top end to PITCH_MAX at its bottom end, so a drag tips the view faster per pixel. #tiltRead beside it
      says the angle. */
-  #tiltZone { left: 0; top: 50%; height: min(240px, 60vh); margin-top: calc(min(240px, 60vh) / -2); width: min(32px, 5.25vw); z-index: 5;
-              cursor: ns-resize; touch-action: none;
+  #tiltZone { top: 34px; left: 50%; width: min(320px, 70vw); margin-left: calc(min(320px, 70vw) / -2); height: 34px; z-index: 5;
+              cursor: ew-resize; touch-action: none;
               background: transparent !important; border: none !important;
               border-radius: 0; backdrop-filter: none !important;
               -webkit-backdrop-filter: none !important; }
@@ -1211,11 +1211,15 @@
   /* THE TURN RAIL IS A RING (Nov 28: "The rotation bar on top should is the ring instead of a scroll bar"): the line and its nubs are put away; the
      headings every `YAW_STEP` degrees stand on it as the games bar's chips do (`makeRing`'s layout, read from one vantage), the one the view faces in
      the middle, gold. */
-  #yawZone::before, #yawZone .strip-mark { display: none !important; }
-  #yawZone .ym { position: absolute; top: 4px; transform-origin: 50% 0; translate: -50% 0; font: 700 0.6875rem/1 var(--ui-sans, system-ui, sans-serif);
+  #yawZone::before, #yawZone .strip-mark, #tiltZone::before, #tiltZone .strip-mark, #tiltZone #tiltRead { display: none !important; }
+  /* THE TILT IS A RING UNDER IT, AND BOTH SPEAK UP (Nov 28: "Increase the font size.   Move the tilt underneath the rotation and convert it to
+     you", read as "to a ring"): #tiltZone stands under the turn ring, its tilts every `TILT_STEP` degrees laid as the turn's are, the one the view is
+     at gold in the middle; the marks' type 0.875rem (was 0.6875). */
+  #yawZone { height: 34px; }
+  #yawZone .ym, #tiltZone .ym { position: absolute; top: 4px; transform-origin: 50% 0; translate: -50% 0; font: 700 0.875rem/1 var(--ui-sans, system-ui, sans-serif);
                  color: rgba(190,208,222,.9); text-shadow: 0 1px 3px rgba(4,6,10,.9); white-space: nowrap; font-variant-numeric: tabular-nums; pointer-events: none; }
-  #yawZone .ym::after { content: ''; display: block; width: 1px; height: 7px; margin: 3px auto 0; background: currentColor; opacity: .7; }
-  #yawZone .ym.on { color: var(--hot); }
+  #yawZone .ym::after, #tiltZone .ym::after { content: ''; display: block; width: 1px; height: 7px; margin: 3px auto 0; background: currentColor; opacity: .7; }
+  #yawZone .ym.on, #tiltZone .ym.on { color: var(--hot); }
   /* SQUARE WHERE THEY MEET THE SCREEN (Sep 25: "the nubs should be squared
      on the screen side"): each nub sits flush against its edge, square
      there, and rounded only on the side facing into the view. */
@@ -71721,11 +71725,11 @@ window.PINCH_PITCH_OFF = true;
   const _tiltLever = window.__tiltLever = { on: false, active: false, held: 0, target: 55 };
   let pid = null;
   if (z){
-    let startY = 0, engaged = false;                 // only a PAN adjusts — not a press
+    let startY = 0, startX = 0, startPitch = 0, engaged = false;                 // only a PAN adjusts — not a press
     z.addEventListener('pointerdown', e => {
       // A second finger is never a tilt: leave it to the two-finger orbit.
       if (e.pointerType === 'touch' && !e.isPrimary) return;
-      pid = e.pointerId; startY = e.clientY; engaged = false;
+      pid = e.pointerId; startY = e.clientY; startX = e.clientX; engaged = false;
       try { z.setPointerCapture(pid); } catch {}
       z.classList.add('dragging');
       e.preventDefault(); e.stopPropagation();
@@ -71768,7 +71772,8 @@ window.PINCH_PITCH_OFF = true;
          No button down = that missed release: end the drag, adjust nothing. */
       if (!e.buttons){ end(e); return; }
       if (!engaged){
-        if (Math.abs(e.clientY - startY) < 5) return;  // jitter is not a pan
+        if (Math.abs(e.clientX - startX) < 5) return;  // jitter is not a pan (across, since the ring: Nov 28)
+        startX = e.clientX; startPitch = st.pitch;
         engaged = true;
         _tiltLever.on = true;
         _tiltLever.active = true;
@@ -71779,9 +71784,9 @@ window.PINCH_PITCH_OFF = true;
            hide when the bar became permanent: the dots open and shut the row,
            and nothing else touches it.) */
       }
-      const rect = z.getBoundingClientRect();
-      const frac = (e.clientY - rect.top) / Math.max(1, rect.height);
-      _tiltLever.target = EdgeGauge.tiltFromFrac(frac);
+      // (the ring, Nov 28: the tilt under the finger stays under it, a larger tilt to the right; the lever keeps it within the floor and PITCH_MAX)
+      const R = yawRingGeo(z), sx = px => { let t = (px - z.getBoundingClientRect().left - R.mid) / R.half; t = t > 0.995 ? 0.995 : t < -0.995 ? -0.995 : t; return RING_LINE.s(t); };
+      _tiltLever.target = Math.min(PITCH_MAX, Math.max(_pitchFloor(), startPitch + TILT_STEP * R.H * (sx(startX) - sx(e.clientX))));
       e.preventDefault();
     });
     z.addEventListener('pointerup', end);
@@ -71854,8 +71859,8 @@ window.PINCH_PITCH_OFF = true;
 }
 /* THE TURN RING'S MEASURES (Nov 28): a mark every YAW_STEP degrees; `item` the room a mark wants; H, the thumb, set so the marks either side of
    the middle are an item apart, half/(H + 1) = item, as the games bar's ring sets its own. */
-const YAW_STEP = 15;
-function yawRingGeo(z){ const W = z.clientWidth || 320, item = 30, half = Math.max(item, W / 2 - item / 2); return { mid: W / 2, half, item, H: Math.max(1, half / item - 1) }; }
+const YAW_STEP = 15, TILT_STEP = 5;
+function yawRingGeo(z){ const W = z.clientWidth || 320, item = 40, half = Math.max(item, W / 2 - item / 2); return { mid: W / 2, half, item, H: Math.max(1, half / item - 1) }; }
 // Turn the view to a heading, round the ground point the camera is looking at.
 function _turnViewTo(yawDeg){
   const back = camGeom().back, y0 = (st.yaw || 0) * Math.PI / 180;
@@ -72028,6 +72033,17 @@ function updateStripMarkers(dt){
     M.tiltTxt.style.top = (parseFloat(yTilt(st.pitch)) + 4).toFixed(1) + 'px'; }
   M.tiltT.style.top = '0px';
   M.tiltB.style.top = (tz.clientHeight - 1) + 'px';
+  // the tilt ring (Nov 28): tilt a at d = (a − the view's)/TILT_STEP marks from the middle, at x = s/(1 + |s|) of the half bar, s = d/H, a larger
+  // tilt to the right; only the tilts the view can take (the floor to PITCH_MAX), no wrap
+  if (!M.tm){ M.tm = []; for (let a = 0; a <= 90; a += TILT_STEP){ const el = document.createElement('div'); el.className = 'ym'; el.dataset.a = a; el.textContent = a + '\u00b0'; tz.appendChild(el); M.tm.push(el); } }
+  { const R = yawRingGeo(tz), lo = _pitchFloor() - 0.01, hi = PITCH_MAX + 0.01;
+    for (const el of M.tm){
+      const a = +el.dataset.a, d = (a - st.pitch) / TILT_STEP;
+      const X = t => RING_LINE.x(t / R.H) * R.half, x = X(d), room = Math.min(Math.abs(X(d + 1) - X(d)), Math.abs(X(d) - X(d - 1))), sc = Math.min(1, room / R.item);
+      if (a < lo - TILT_STEP + 0.02 || a > hi || sc < 0.2){ el.style.display = 'none'; continue; }
+      el.style.display = ''; el.style.left = (R.mid + x).toFixed(1) + 'px'; el.style.scale = sc < 0.999 ? sc.toFixed(3) : ''; el.style.opacity = (0.35 + 0.65 * sc).toFixed(2);
+      el.classList.toggle('on', Math.abs(d) < 0.5);
+    } }
   M.tiltTgt.style.display = (lv && lv.active) ? '' : 'none';
   if (lv && lv.active) M.tiltTgt.style.top = yTilt(Math.max(lv.target, _pitchFloor()));
   // the position rail: the thumb where you are in the window, centred again off either end or when the way you go turns
