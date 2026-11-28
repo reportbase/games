@@ -1591,3 +1591,19 @@ Each board's games differ and repeat each visit: the planners' hand error, drawn
 `rng(board · 7919 + game · 104729 + 17)` (`bgSeeded`). The latest `BG_CAP` (48) boards are kept, and one out of view stops where it is. Checked by a
 probe in 9-ball, 8-ball, straight pool, three-cushion, bowling and bumper pool: three boards' views read every 250 ms aim, run, rest and aim again,
 their shots after the break different board from board, no page error. Not seen: a game played to its end and racked again, or on a device.
+
+**The boards no one plays play games played ahead** (Nov 28: "The chess game gets it correct, why is pool more difficult", then "Let's try a
+variety of pre pogramed pool games again"). As chess's boards play its baked self-play games, a pool board no one plays plays one of the games in
+`POOL_GAMES`, written into the page by `node tools/bake-pool.mjs [games a level]`: for each of 9-ball, 8-ball, one-pocket, bank pool, straight
+pool, three-cushion, bowling and bumper pool, two games at each level, the computer against itself (`bakeGame`, `matchAuto`'s loop) with its hand
+error drawn from a seeded `rng`, at most 40 shots, 80 games and 1,927 shots in all, 201 KB of the page. Each shot is written as the table before
+it (every ball's place to a thousandth, base 36; `s` sunk, `d` in the ditch) and the shot (angle to 10⁻⁴ rad, power to 0.1, tip to 0.001). A
+board picks a game of its kind by its number (`phaseOf`) and a shot to begin at; at each shot it sets the table written (`tableOf`, from the
+game's rack for the balls' colours, bumpers and lay), flies the shot written (the game's own `sim`, a few ms, one board's a frame or so: `BG_MS`),
+plays it by the clock, then sets the next table written; after the last a hold and it begins again. Nothing is planned. The baker sets its table
+to the rounded one and rounds its shot before flying it, so the boards fly exactly what was baked (first bakes without it: a thousandth of a ball
+at the break grew to metres, 8–17% of balls ending 0.1 or more from the next table). Checked by `_debug.bakedCheck(key)`, every shot flown again
+against the next table, balls on the table in both: 99% within 0.0007 of it in every game, 0.2–3.5% of balls still 0.1 or more off (the rules
+moved none in a sample of 882; the cause not found), where a ball steps at the shot's end. A probe in 9-ball, three-cushion and bowling: three
+boards aim, run and rest in different games. `bgView`'s live play stays for a game with none baked; pool hockey keeps its recording. Not seen on
+a device, and a browser whose sines differ in the last digit plays a shot a little differently, the next table setting it right.
