@@ -1116,7 +1116,7 @@
      readout."): a short strip centred on the left edge, 240px or 60% of the height on a short screen, as the turn rail is across the top; the
      tilt still runs from the floor at its top end to PITCH_MAX at its bottom end, so a drag tips the view faster per pixel. #tiltRead beside it
      says the angle. */
-  #tiltZone { top: 42px; left: 50%; width: min(360px, 80vw); margin-left: calc(min(360px, 80vw) / -2); height: 42px; z-index: 5;
+  #tiltZone { top: 48px; left: 50%; width: min(360px, 80vw); margin-left: calc(min(360px, 80vw) / -2); height: 42px; z-index: 5;
               cursor: ew-resize; touch-action: none;
               background: transparent !important; border: none !important;
               border-radius: 0; backdrop-filter: none !important;
@@ -1196,7 +1196,7 @@
   /* THE RAIL PACKED IN THE MIDDLE TOO (Nov 2: "the scroll bar should be similarly compressed.", after the compass's angles were): the turn rail is a
      short strip centred on the top edge, 240px or 60% of the width on a narrow screen, not the whole top. Its width is still one full turn
      (−180° at the left end, +180° at the right), so a drag turns the view faster per pixel than it did across the screen. */
-  #yawZone { top: 0; left: 50%; width: min(360px, 80vw); margin-left: calc(min(360px, 80vw) / -2); height: 30px; z-index: 5;
+  #yawZone { top: 6px; left: 50%; width: min(360px, 80vw); margin-left: calc(min(360px, 80vw) / -2); height: 30px; z-index: 5;
              cursor: ew-resize; touch-action: none;
              background: transparent !important; border: none !important;
              border-radius: 0; backdrop-filter: none !important;
@@ -1218,6 +1218,9 @@
   #yawZone { height: 42px; }
   /* (Nov 28: "Increase font size, when panning the ring, set the background to transparent gray": the marks 1.125rem, and a ring held by a finger
      or the mouse is backed in a see-through gray, rgba(96, 96, 100, .62), while it is held, `.dragging`.) */
+  /* (Nov 28: "Move the rings down 6  px.    Remove the right scroll bar.": the two rings 6px lower, and the position rail on the right edge,
+     #thrustZone, put away; its code stays, asking of an element no one sees.) */
+  #thrustZone { display: none !important; }
   #yawZone.dragging, #tiltZone.dragging { background: rgba(96,96,100,.62) !important; border-radius: 10px; }
   #yawZone .ym, #tiltZone .ym { position: absolute; top: 4px; transform-origin: 50% 0; translate: -50% 0; font: 700 1.125rem/1 var(--ui-sans, system-ui, sans-serif);
                  color: rgba(190,208,222,.9); text-shadow: 0 1px 3px rgba(4,6,10,.9); white-space: nowrap; font-variant-numeric: tabular-nums; pointer-events: none; }

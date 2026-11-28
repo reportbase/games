@@ -698,3 +698,8 @@ and tilt rings' marks are 1.125rem (were 0.875), each mark given 50 px (`yawRing
 release) is backed in a see-through gray, rgba(96, 96, 100, .62), with rounded corners. Checked by a probe: the class on and off with the press and
 the release; screenshots with it on show the gray band behind the ring (a first gray, .38 of a middle gray, darkened the light boards under it by
 only 7%, too faint to see, so it was made deeper); no page error.
+
+**The rings 6 px lower, and no right rail** (Nov 28: "Move the rings down 6  px.    Remove the right scroll bar."). The turn ring's top is 6 px
+(was 0) and the tilt ring's 48 px (was 42). The position rail on the right edge (`#thrustZone`, "the right rail is a scroll bar for where you
+are", Oct 25) is put away by its style (`display: none`); its code stays, and the keys, a swipe's drift, the dial and auto motion still move you.
+Checked by a probe: the rings at 6 and 48 px, the right rail not shown, no page error.
