@@ -58191,7 +58191,10 @@ const TRICK_APP = (() => {
       const rr = (w.r || R) + (b.r || R), dx = b.x - w.x, dz = b.z - w.z, t = dx * ca + dz * sa, off = -dx * sa + dz * ca;
       if (t <= 0 || Math.abs(off) >= rr) continue;
       const s = t - Math.sqrt(rr * rr - off * off); if (s < 0 || (best && s >= best.s)) continue;
-      best = { s, b, deg: Math.asin(Math.min(1, Math.abs(off) / rr)) * 180 / Math.PI }; }
+      // (the slope, Nov 28: "show the slope not the angle on the target ball": across over along at the meeting, the offset over the run left
+      //  of the line of centres, 0 full on, 1 the half-ball hit, growing without end toward a graze; `deg` kept for the checks)
+      const along = Math.sqrt(rr * rr - off * off);
+      best = { s, b, slope: Math.abs(off) / along, deg: Math.asin(Math.min(1, Math.abs(off) / rr)) * 180 / Math.PI }; }
     return best;
   }
   function cutSync(g, w){
@@ -58202,7 +58205,7 @@ const TRICK_APP = (() => {
     const c = mine ? cutOf(g, w) : null, at = c ? ballScreen(c.b.x, c.b.z) : null;
     CTL.cutDeg = c ? c.deg : null;
     if (!at){ CTL.cut.style.display = 'none'; return; }
-    CTL.cut.textContent = c.deg.toFixed(1) + '°'; CTL.cut.style.display = 'block';
+    CTL.cut.textContent = c.slope < 10 ? c.slope.toFixed(2) : c.slope.toFixed(0); CTL.cut.style.display = 'block'; CTL.cutSlope = c.slope;
     CTL.cut.style.left = Math.round(Math.max(4, Math.min(innerWidth - 60, at[0] + 14))) + 'px'; CTL.cut.style.top = Math.round(Math.max(4, Math.min(innerHeight - 24, at[1] - 24))) + 'px';
   }
   const ctlHide = () => { if (CTL.el){ CTL.el.style.display = 'none'; CTL.pull.style.display = 'none'; } if (CTL.cut) CTL.cut.style.display = 'none'; CTL.g = null; CTL.pulling = null; CTL.spin = false; mapHide(); };
@@ -58215,7 +58218,7 @@ const TRICK_APP = (() => {
      TURNED BY HAND (Nov 27: "You should be able to rotate the board bu rotataing the minimap directly"): since then it does take a finger. A drag on it
      turns the view about the place it looks at (`FIELD_WORLD.turnTo`) by the angle the finger has gone round the minimap's middle, so the board turns
      as the minimap turns under the finger; the cue keeps its aim. The field's own pan is kept off it (`overChrome` names `#tsMap`). */
-  const MAP = { el: null, seen: 0, sig: '' }, MAP_W = 150, MAP_BG = 0.45; const MAP_TURN = 1;
+  const MAP = { el: null, seen: 0, sig: '' }, MAP_W = 150, MAP_BG = 0.45; const MAP_TURN = 1, MAP_TAP_PX = 8;
   function mapEnsure(){
     if (MAP.el || typeof document === 'undefined') return MAP.el;
     // (the canvas in a box of its own: the page's `body > canvas` rule would put a canvas of the body's in the top left)
@@ -58226,11 +58229,15 @@ const TRICK_APP = (() => {
     el.appendChild(cv); document.body.appendChild(el); MAP.el = el; MAP.cv = cv;
     { let T = null; const angOf = e => { const r = el.getBoundingClientRect(); return Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)); };
       el.addEventListener('pointerdown', e => { e.stopPropagation(); e.preventDefault(); const W = window.FIELD_WORLD; if (!W) return;
-        T = { id: e.pointerId, a: angOf(e), yaw: W.st.yaw || 0, turn: 0 }; try { el.setPointerCapture(e.pointerId); } catch {} MAP.seen = performance.now(); });
-      el.addEventListener('pointermove', e => { if (!T || e.pointerId !== T.id) return; e.stopPropagation(); const a = angOf(e); let d = a - T.a; d = Math.atan2(Math.sin(d), Math.cos(d)); T.a = a; T.turn += d;
+        T = { id: e.pointerId, a: angOf(e), yaw: W.st.yaw || 0, turn: 0, x0: e.clientX, y0: e.clientY, far: 0 }; try { el.setPointerCapture(e.pointerId); } catch {} MAP.seen = performance.now(); });
+      el.addEventListener('pointermove', e => { if (!T || e.pointerId !== T.id) return; e.stopPropagation(); T.far = Math.max(T.far, Math.hypot(e.clientX - T.x0, e.clientY - T.y0)); const a = angOf(e); let d = a - T.a; d = Math.atan2(Math.sin(d), Math.cos(d)); T.a = a; T.turn += d;
         // (a turn of the finger clockwise on the screen is the field's heading grown by as much: the board, as the minimap, turns with the finger)
         try { window.FIELD_WORLD.turnTo(T.yaw + MAP_TURN * T.turn * 180 / Math.PI); window.fieldWake && window.fieldWake(); } catch {} MAP.seen = performance.now(); });
-      const up = e => { if (T && e.pointerId === T.id){ T = null; ateAt = performance.now(); } e.stopPropagation(); };
+      /* A TAP CENTRES THE BOARD (Nov 28: "Taping the minimap should center the current board"): a press let go where it came down (within
+         `MAP_TAP_PX`) puts the board's middle where the view looks, the turn, tilt and zoom kept (`FIELD_WORLD.viewTo`). */
+      const up = e => { if (T && e.pointerId === T.id){
+          if (e.type === 'pointerup' && T.far < MAP_TAP_PX && Math.abs(T.turn) < 0.05){ try { const W = window.FIELD_WORLD; W.viewTo({ x: W.target.boardX, z: W.target.boardZ }); window.fieldWake && window.fieldWake(); } catch {} }
+          T = null; ateAt = performance.now(); } e.stopPropagation(); };
       el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up); }
     setInterval(() => { if (MAP.el.style.display !== 'none' && performance.now() - MAP.seen > CTL_GONE) mapHide(); }, 200);
     return el;
@@ -58669,7 +58676,7 @@ const TRICK_APP = (() => {
               makePuzzle, genOnce, runGen, trial, windowOf, GEN_LV, PUZ, JOBS, WK, workerSrc, plainOf, puzzleOf, goalFor, pump, puzzleSoon, levelAt, levelOf: (c, r) => levelAt(boardIdx(c, r)), ringOf,
               starsOf, roll, rotsOf, rotStart, FREEPLAY, CTL, ctlSync, nextBoardOf, DL, runSim, genRun,
               ed: () => ED, edOpen, edStart, edTap, edTile, edTiles, edCheck, edDone, edCancel, edView, draftOf, cleanMine, mineGoal, mineText, solveMine, solveSoon, MINE, mineAt, shareShot, takeShot, ED_TOOLS, ED_ACTS,
-              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), behind: v => { BEHIND_ON = !!v; }, rpGo, rpCan, RP_AIM, aimSight, aimSightAt, surePot, hopeOf, sightFor, SEE_EPS, pathItems, holdMs: v => { HOLD_MS = v; }, cutOf, get cutDeg(){ return CTL.cutDeg; }, get turnGain(){ return TURN_GAIN; }, get ateIn(){ return ateAt - performance.now(); }, behindCue, wholeTable, get WHOLE(){ return WHOLE; } },
+              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), behind: v => { BEHIND_ON = !!v; }, rpGo, rpCan, RP_AIM, aimSight, aimSightAt, surePot, hopeOf, sightFor, SEE_EPS, pathItems, holdMs: v => { HOLD_MS = v; }, cutOf, get cutDeg(){ return CTL.cutDeg; }, get cutSlope(){ return CTL.cutSlope; }, get turnGain(){ return TURN_GAIN; }, get ateIn(){ return ateAt - performance.now(); }, behindCue, wholeTable, get WHOLE(){ return WHOLE; } },
   };
   SHARE.install(app, takeShot);
   /* THE MATCH GAMES' APPS (THE POOL GAMES, ONE TABLE, above): each is this app's own hooks with its entry's name, menu, titles and picture.
