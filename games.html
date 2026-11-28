@@ -1221,7 +1221,13 @@
   /* (Nov 28: "Move the rings down 6  px.    Remove the right scroll bar.": the two rings 6px lower, and the position rail on the right edge,
      #thrustZone, put away; its code stays, asking of an element no one sees.) */
   #thrustZone { display: none !important; }
-  #yawZone.dragging, #tiltZone.dragging { background: rgba(96,96,100,.62) !important; border-radius: 10px; }
+  /* (the gray taken off again, Nov 28: "Remove the background color.    When panning the rings, show the value on bottom in place of the bottom
+     boards.": while a ring is held, `body.ring-held`, the bottom row of boards is hidden and #ringValue stands there, saying the heading or the tilt.) */
+  #ringValue { position: fixed; left: 50%; bottom: 18px; translate: -50% 0; z-index: 60; display: none; pointer-events: none;
+               font: 700 2rem/1 var(--ui-sans, system-ui, sans-serif); color: var(--hot); text-shadow: 0 2px 6px rgba(4,6,10,.9);
+               font-variant-numeric: tabular-nums; white-space: nowrap; }
+  body.ring-held #ringValue { display: block; }
+  body.ring-held #boardBrowser { visibility: hidden; }
   #yawZone .ym, #tiltZone .ym { position: absolute; top: 4px; transform-origin: 50% 0; translate: -50% 0; font: 700 1.125rem/1 var(--ui-sans, system-ui, sans-serif);
                  color: rgba(190,208,222,.9); text-shadow: 0 1px 3px rgba(4,6,10,.9); white-space: nowrap; font-variant-numeric: tabular-nums; pointer-events: none; }
   #yawZone .ym::after, #tiltZone .ym::after { content: ''; display: block; width: 1px; height: 7px; margin: 3px auto 0; background: currentColor; opacity: .7; }
@@ -72039,6 +72045,12 @@ function updateStripMarkers(dt){
     M.tiltTxt.style.top = (parseFloat(yTilt(st.pitch)) + 4).toFixed(1) + 'px'; }
   M.tiltT.style.top = '0px';
   M.tiltB.style.top = (tz.clientHeight - 1) + 'px';
+  // the value at the foot while a ring is held (Nov 28), in place of the bottom row
+  { const yH = yz && yz.classList.contains('dragging'), tH = tz.classList.contains('dragging'), held = yH || tH;
+    document.body.classList.toggle('ring-held', held);
+    if (held){ if (!M.rv){ M.rv = document.createElement('div'); M.rv.id = 'ringValue'; document.body.appendChild(M.rv); }
+      const t = yH ? 'Heading ' + Math.round((((st.yaw || 0) % 360) + 360) % 360) % 360 + '\u00b0' : 'Tilt ' + Math.round(st.pitch) + '\u00b0';
+      if (M.rv.textContent !== t) M.rv.textContent = t; } }
   // the tilt ring (Nov 28): tilt a at d = (a − the view's)/TILT_STEP marks from the middle, at x = s/(1 + |s|) of the half bar, s = d/H, a larger
   // tilt to the right; only the tilts the view can take (the floor to PITCH_MAX), no wrap
   if (!M.tm){ M.tm = []; for (let a = 0; a <= 90; a += TILT_STEP){ const el = document.createElement('div'); el.className = 'ym'; el.dataset.a = a; el.textContent = a + '\u00b0'; tz.appendChild(el); M.tm.push(el); } }
