@@ -1607,3 +1607,11 @@ against the next table, balls on the table in both: 99% within 0.0007 of it in e
 moved none in a sample of 882; the cause not found), where a ball steps at the shot's end. A probe in 9-ball, three-cushion and bowling: three
 boards aim, run and rest in different games. `bgView`'s live play stays for a game with none baked; pool hockey keeps its recording. Not seen on
 a device, and a browser whose sines differ in the last digit plays a shot a little differently, the next table setting it right.
+
+**The cut as a slope, and a tap on the minimap centres the board** (Nov 28: "show the slope not the angle on the target ball.  Taping the minimap
+should center the current board"). `#tsCut` now says the cut's slope, not its angle: across over along where the white meets the ball, the line's
+offset from the ball's middle over the run left of the line of centres (`cutOf`'s `slope`, |off| / √(rr² − off²)): 0 full on, 1 the half-ball hit,
+growing without end toward a graze; two decimals (none past 10). A press on the minimap let go within `MAP_TAP_PX` (8) of where it came down puts
+the board's middle where the view looks (`FIELD_WORLD.viewTo`), its turn, tilt and zoom kept; a drag still turns it. Checked by a probe in 9-ball:
+aims giving 0, 0.228 read 0.00, 0.23 (the angle's tangent 0, 0.228); the view moved off the board left its middle 184 and 222 px from where the view
+looks, a real click on the minimap put it at 0. `_debug.cutSlope`.
