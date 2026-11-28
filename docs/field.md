@@ -703,3 +703,10 @@ only 7%, too faint to see, so it was made deeper); no page error.
 (was 0) and the tilt ring's 48 px (was 42). The position rail on the right edge (`#thrustZone`, "the right rail is a scroll bar for where you
 are", Oct 25) is put away by its style (`display: none`); its code stays, and the keys, a swipe's drift, the dial and auto motion still move you.
 Checked by a probe: the rings at 6 and 48 px, the right rail not shown, no page error.
+
+**No gray; the ring's value at the foot while it is held** (Nov 28: "Remove the background color.    When panning the rings, show the value on
+bottom in place of the bottom boards."). The see-through gray behind a held ring is gone. While a ring is held (`.dragging` on `#yawZone` or
+`#tiltZone`, read each frame in `updateStripMarkers`) the page wears `body.ring-held`: the bottom row of boards (`#boardBrowser`) is hidden and
+`#ringValue` stands at the foot in its place, 2rem gold, saying "Heading 45°" (the heading 0–359 the turn ring's middle shows) or "Tilt 57°".
+Let go, the row is back. Checked by a probe: a real drag on each ring showed "Tilt 57°" and "Heading 353°" with the row hidden, the row back and
+the value gone after the release, no background on either ring, no page error; a screenshot shows the value at the foot.
