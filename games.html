@@ -1116,7 +1116,7 @@
      readout."): a short strip centred on the left edge, 240px or 60% of the height on a short screen, as the turn rail is across the top; the
      tilt still runs from the floor at its top end to PITCH_MAX at its bottom end, so a drag tips the view faster per pixel. #tiltRead beside it
      says the angle. */
-  #tiltZone { top: 34px; left: 50%; width: min(320px, 70vw); margin-left: calc(min(320px, 70vw) / -2); height: 34px; z-index: 5;
+  #tiltZone { top: 42px; left: 50%; width: min(360px, 80vw); margin-left: calc(min(360px, 80vw) / -2); height: 42px; z-index: 5;
               cursor: ew-resize; touch-action: none;
               background: transparent !important; border: none !important;
               border-radius: 0; backdrop-filter: none !important;
@@ -1196,7 +1196,7 @@
   /* THE RAIL PACKED IN THE MIDDLE TOO (Nov 2: "the scroll bar should be similarly compressed.", after the compass's angles were): the turn rail is a
      short strip centred on the top edge, 240px or 60% of the width on a narrow screen, not the whole top. Its width is still one full turn
      (−180° at the left end, +180° at the right), so a drag turns the view faster per pixel than it did across the screen. */
-  #yawZone { top: 0; left: 50%; width: min(320px, 70vw); margin-left: calc(min(320px, 70vw) / -2); height: 30px; z-index: 5;
+  #yawZone { top: 0; left: 50%; width: min(360px, 80vw); margin-left: calc(min(360px, 80vw) / -2); height: 30px; z-index: 5;
              cursor: ew-resize; touch-action: none;
              background: transparent !important; border: none !important;
              border-radius: 0; backdrop-filter: none !important;
@@ -1215,8 +1215,11 @@
   /* THE TILT IS A RING UNDER IT, AND BOTH SPEAK UP (Nov 28: "Increase the font size.   Move the tilt underneath the rotation and convert it to
      you", read as "to a ring"): #tiltZone stands under the turn ring, its tilts every `TILT_STEP` degrees laid as the turn's are, the one the view is
      at gold in the middle; the marks' type 0.875rem (was 0.6875). */
-  #yawZone { height: 34px; }
-  #yawZone .ym, #tiltZone .ym { position: absolute; top: 4px; transform-origin: 50% 0; translate: -50% 0; font: 700 0.875rem/1 var(--ui-sans, system-ui, sans-serif);
+  #yawZone { height: 42px; }
+  /* (Nov 28: "Increase font size, when panning the ring, set the background to transparent gray": the marks 1.125rem, and a ring held by a finger
+     or the mouse is backed in a see-through gray, rgba(96, 96, 100, .62), while it is held, `.dragging`.) */
+  #yawZone.dragging, #tiltZone.dragging { background: rgba(96,96,100,.62) !important; border-radius: 10px; }
+  #yawZone .ym, #tiltZone .ym { position: absolute; top: 4px; transform-origin: 50% 0; translate: -50% 0; font: 700 1.125rem/1 var(--ui-sans, system-ui, sans-serif);
                  color: rgba(190,208,222,.9); text-shadow: 0 1px 3px rgba(4,6,10,.9); white-space: nowrap; font-variant-numeric: tabular-nums; pointer-events: none; }
   #yawZone .ym::after, #tiltZone .ym::after { content: ''; display: block; width: 1px; height: 7px; margin: 3px auto 0; background: currentColor; opacity: .7; }
   #yawZone .ym.on, #tiltZone .ym.on { color: var(--hot); }
@@ -71860,7 +71863,7 @@ window.PINCH_PITCH_OFF = true;
 /* THE TURN RING'S MEASURES (Nov 28): a mark every YAW_STEP degrees; `item` the room a mark wants; H, the thumb, set so the marks either side of
    the middle are an item apart, half/(H + 1) = item, as the games bar's ring sets its own. */
 const YAW_STEP = 15, TILT_STEP = 5;
-function yawRingGeo(z){ const W = z.clientWidth || 320, item = 40, half = Math.max(item, W / 2 - item / 2); return { mid: W / 2, half, item, H: Math.max(1, half / item - 1) }; }
+function yawRingGeo(z){ const W = z.clientWidth || 360, item = 50, half = Math.max(item, W / 2 - item / 2); return { mid: W / 2, half, item, H: Math.max(1, half / item - 1) }; }
 // Turn the view to a heading, round the ground point the camera is looking at.
 function _turnViewTo(yawDeg){
   const back = camGeom().back, y0 = (st.yaw || 0) * Math.PI / 180;
